@@ -131,7 +131,8 @@ def _strategy(
         return ExpectedPointsStrategy()
     if not model or not upstream_url or not model_license:
         raise typer.BadParameter(
-            "LLM strategies require --model, --upstream-url, and --model-license"
+            "LLM benchmark exports require --model, --upstream-url, and "
+            "--model-license for reproducible provenance"
         )
     llm = make_model(
         ModelConfiguration(

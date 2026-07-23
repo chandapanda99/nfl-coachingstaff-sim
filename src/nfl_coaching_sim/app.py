@@ -6,6 +6,8 @@ import json
 from collections.abc import Iterator, Sequence
 from typing import Any
 
+from pydantic import HttpUrl
+
 from nfl_coaching_sim.agents import (
     ExpectedPointsStrategy,
     ModelConfiguration,
@@ -19,26 +21,17 @@ from nfl_coaching_sim.models import DecisionTrace, Scenario
 from nfl_coaching_sim.simulator import DeterministicSimulator
 
 
-def scenario_view(
-    scenario_id: str, scenario_payloads: Sequence[dict[str, Any]]
-) -> tuple[str, dict[str, Any], list[list[Any]]]:
-    scenario = next(
-        Scenario.model_validate(item)
-        for item in scenario_payloads
-        if item["scenario_id"] == scenario_id
-    )
+def scenario_view(scenario_id: str, scenario_payloads: Sequence[dict[str, Any]]) -> tuple[str, dict[str, Any], list[list[Any]]]:
+    scenario = next(Scenario.model_validate(item) for item in scenario_payloads if item["scenario_id"] == scenario_id)
     state = scenario.state
     scoreboard = (
         f"## {state.possession_team} {state.possession_score} — "
         f"{state.defensive_team} {state.defensive_score}\n"
         f"**{state.clock_display} · {state.down} & {state.yards_to_go:g} · "
-        f"ball at the opponent {state.yardline_100:g}**"
+        f"Ball at the Opponent {state.yardline_100:g}**"
     )
     state_data = state.model_dump(mode="json")
-    table = [
-        [action.value, round(scenario.ep_baseline[action], 4)]
-        for action in state.legal_actions
-    ]
+    table = [[action.value, round(scenario.ep_baseline[action], 4)] for action in state.legal_actions]
     return scoreboard, state_data, table
 
 
@@ -47,37 +40,27 @@ def _transcript_markdown(trace: DecisionTrace) -> str:
         return f"### {trace.strategy}\n\n{trace.decision.rationale}"
     sections = ["### Independent recommendations"]
     for rec in trace.transcript.initial:
-        sections.append(
-            f"**{rec.role.replace('_', ' ').title()} — {rec.decision.action.value} "
-            f"({rec.confidence:.0%})**\n\n{rec.argument}"
-        )
+        sections.append(f"**{rec.role.replace('_', ' ').title()} — {rec.decision.action.value} ({rec.confidence:.0%})**\n\n{rec.argument}")
     sections.append("### Revised debate")
     for rec in trace.transcript.revised:
-        sections.append(
-            f"**{rec.role.replace('_', ' ').title()} — {rec.decision.action.value}**"
-            f"\n\n{rec.rebuttal}"
-        )
+        sections.append(f"**{rec.role.replace('_', ' ').title()} — {rec.decision.action.value}**\n\n{rec.rebuttal}")
     if trace.failures:
         sections.append("### Recorded failures\n\n" + "\n".join(f"- {item}" for item in trace.failures))
     return "\n\n".join(sections)
 
 
 def run_strategy_events(
-    scenario_id: str,
-    strategy_name: str,
-    provider_name: str,
-    model_name: str,
-    upstream_url: str,
-    model_license: str,
-    base_url: str,
-    scenario_payloads: Sequence[dict[str, Any]],
-    simulator: DeterministicSimulator,
+        scenario_id: str,
+        strategy_name: str,
+        provider_name: str,
+        model_name: str,
+        upstream_url: str,
+        model_license: str,
+        base_url: str,
+        scenario_payloads: Sequence[dict[str, Any]],
+        simulator: DeterministicSimulator,
 ) -> Iterator[tuple[str, str, dict[str, Any], dict[str, Any]]]:
-    scenario = next(
-        Scenario.model_validate(item)
-        for item in scenario_payloads
-        if item["scenario_id"] == scenario_id
-    )
+    scenario = next(Scenario.model_validate(item) for item in scenario_payloads if item["scenario_id"] == scenario_id)
     yield "Preparing strategy…", "", {}, {}
     if strategy_name == "Expected points":
         strategy: Any = ExpectedPointsStrategy()
@@ -86,7 +69,7 @@ def run_strategy_events(
         configuration = ModelConfiguration(
             provider=ModelProvider(provider_name),
             model=model_name,
-            upstream_url=upstream_url,
+            upstream_url=HttpUrl(upstream_url) if upstream_url else None,
             license=model_license,
             base_url=base_url,
         )
@@ -111,10 +94,7 @@ def run_strategy_events(
     )
 
 
-def create_app(
-    scenarios: Sequence[Scenario] | None = None,
-    simulator: DeterministicSimulator | None = None,
-) -> Any:
+def create_app(scenarios: Sequence[Scenario] | None = None, simulator: DeterministicSimulator | None = None) -> Any:
     import gradio as gr
 
     scenario_list = list(scenarios or demo_scenarios())
@@ -126,14 +106,14 @@ def create_app(
     )
 
     def run_callback(
-        scenario_id: str,
-        strategy_name: str,
-        provider_name: str,
-        model: str,
-        source: str,
-        license_name: str,
-        url: str,
-        items: Sequence[dict[str, Any]],
+            scenario_id: str,
+            strategy_name: str,
+            provider_name: str,
+            model: str,
+            source: str,
+            license_name: str,
+            url: str,
+            items: Sequence[dict[str, Any]],
     ) -> Iterator[tuple[str, str, dict[str, Any], dict[str, Any]]]:
         yield from run_strategy_events(
             scenario_id,
@@ -148,10 +128,7 @@ def create_app(
         )
 
     with gr.Blocks(title="NFL Coaching Staff Simulator") as demo:
-        gr.Markdown(
-            "# Multi-Agent NFL Coaching Simulator\n"
-            "Compare an expected-points policy, one head coach, and a deliberating staff."
-        )
+        gr.Markdown("# Multi-Agent AI NFL Coaching Simulator\nCompare an expected-points policy, one head coach, and a deliberating staff")
         session_scenarios = gr.State(payloads)
         with gr.Row():
             with gr.Column(scale=2):
@@ -178,19 +155,14 @@ def create_app(
                 provider = gr.Dropdown(
                     choices=[
                         (ModelProvider.OLLAMA.value, ModelProvider.OLLAMA.value),
-                        (
-                            "Azure AI Foundry",
-                            ModelProvider.AZURE_FOUNDRY.value,
-                        ),
+                        ("Azure AI Foundry", ModelProvider.AZURE_FOUNDRY.value),
                     ],
                     value=ModelProvider.OLLAMA.value,
                     label="Model provider",
                 )
-                model_name = gr.Textbox(
-                    label="Model tag or deployment name (required for LLM strategies)"
-                )
+                model_name = gr.Textbox(label="Model tag or deployment name (required for LLM strategies)")
                 upstream_url = gr.Textbox(
-                    label="Upstream model URL",
+                    label="Model source URL (optional for interactive use)",
                     placeholder="https://huggingface.co/organization/model",
                 )
                 model_license = gr.Dropdown(
@@ -200,17 +172,15 @@ def create_app(
                 base_url = gr.Textbox(
                     value="http://127.0.0.1:11434",
                     label="Provider endpoint",
-                    info=(
-                        "Ollama URL, or a Foundry endpoint ending in /openai/v1/. "
-                        "Foundry uses Entra ID unless AZURE_FOUNDRY_API_KEY is set."
-                    ),
+                    info="Ollama URL, or a Foundry endpoint ending in /openai/v1/. "
+                         "Foundry uses Entra ID unless AZURE_FOUNDRY_API_KEY is set.",
                 )
-                run = gr.Button("Make the call", variant="primary")
+                run = gr.Button("Make the Call!", variant="primary")
                 status = gr.Markdown()
         with gr.Row():
             transcript = gr.Markdown(label="Debate")
-            final_decision = gr.JSON(label="Final decision")
-            score = gr.JSON(label="Deterministic score")
+            final_decision = gr.JSON(label="Final Decision")
+            score = gr.JSON(label="Deterministic Score")
 
         scenario_selector.change(
             scenario_view,

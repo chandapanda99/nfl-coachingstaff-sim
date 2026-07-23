@@ -28,25 +28,15 @@ from nfl_coaching_sim.models import (
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
 ROLES = {
-    "offensive_coordinator": (
-        "Assess execution, down-and-distance, likely defensive response, and the "
-        "run/pass mechanics of the call."
-    ),
+    "offensive_coordinator": "Assess execution, down-and-distance, likely defensive response, and the run/pass mechanics of the call.",
     "defensive_coordinator": (
-        "Think like the opponent: identify the coverage, pressure, box count, and "
-        "counter-strategy the offense is likely to face."
-    ),
+        "Think like the opponent: identify the coverage, pressure, box count, and counter-strategy the offense is likely to face."),
     "analytics_assistant": (
-        "Use the provided expected-points evidence, win-probability context, field "
-        "position, and uncertainty. Do not invent statistics."
+        "Use the provided expected-points evidence, win-probability context, field position, and uncertainty. Do not invent statistics."
     ),
-    "clock_management_specialist": (
-        "Prioritize possession value, remaining clock, timeouts, clock runoff, and "
-        "the score state."
-    ),
+    "clock_management_specialist": "Prioritize possession value, remaining clock, timeouts, clock runoff, and the score state.",
     "critical_reviewer": (
-        "Stress-test assumptions, surface tail risks, and prefer the most defensible "
-        "choice after challenging the other perspectives."
+        "Stress-test assumptions, surface tail risks, and prefer the most defensible choice after challenging the other perspectives."
     ),
 }
 
@@ -68,7 +58,7 @@ class ModelConfiguration(BaseModel):
     provider: ModelProvider = ModelProvider.OLLAMA
     model: str = Field(min_length=1)
     base_url: str = "http://127.0.0.1:11434"
-    upstream_url: HttpUrl
+    upstream_url: HttpUrl | None = None
     license: str
     temperature: float = Field(default=0.0, ge=0, le=2)
     seed: int = 2026
@@ -76,9 +66,7 @@ class ModelConfiguration(BaseModel):
     @model_validator(mode="after")
     def validate_open_model(self) -> ModelConfiguration:
         if self.license not in APPROVED_LICENSES:
-            raise ValueError(
-                f"model license must be one of {sorted(APPROVED_LICENSES)}"
-            )
+            raise ValueError(f"model license must be one of {sorted(APPROVED_LICENSES)}")
         endpoint = urlparse(self.base_url)
         if not endpoint.scheme or not endpoint.netloc:
             raise ValueError("base_url must be an absolute HTTP(S) endpoint")
@@ -86,9 +74,7 @@ class ModelConfiguration(BaseModel):
             if endpoint.scheme != "https":
                 raise ValueError("Azure Foundry endpoints must use HTTPS")
             if not endpoint.path.rstrip("/").endswith("/openai/v1"):
-                raise ValueError(
-                    "Azure Foundry base_url must end with /openai/v1/"
-                )
+                raise ValueError("Azure Foundry base_url must end with /openai/v1/")
         return self
 
     @property
@@ -99,9 +85,7 @@ class ModelConfiguration(BaseModel):
 class StructuredModel(Protocol):
     model_id: str
 
-    def invoke(
-        self, schema: type[SchemaT], system_prompt: str, user_prompt: str
-    ) -> SchemaT: ...
+    def invoke(self, schema: type[SchemaT], system_prompt: str, user_prompt: str) -> SchemaT: ...
 
 
 class LangChainOllamaModel:
@@ -120,9 +104,7 @@ class LangChainOllamaModel:
             validate_model_on_init=True,
         )
 
-    def invoke(
-        self, schema: type[SchemaT], system_prompt: str, user_prompt: str
-    ) -> SchemaT:
+    def invoke(self, schema: type[SchemaT], system_prompt: str, user_prompt: str) -> SchemaT:
         return _invoke_with_repair(self._model, schema, system_prompt, user_prompt)
 
 
@@ -133,10 +115,7 @@ class AzureFoundryStructuredModel:
         try:
             from langchain_openai import ChatOpenAI
         except ImportError as error:
-            raise RuntimeError(
-                "Azure Foundry support requires the 'azure' optional dependency: "
-                "pip install -e '.[azure]'"
-            ) from error
+            raise RuntimeError("Azure Foundry support requires the 'azure' optional dependency: pip install -e '.[azure]'") from error
 
         api_key = os.environ.get("AZURE_FOUNDRY_API_KEY")
         if api_key:
@@ -144,19 +123,11 @@ class AzureFoundryStructuredModel:
             self.authentication = "api_key_environment"
         else:
             try:
-                from azure.identity import (
-                    DefaultAzureCredential,
-                    get_bearer_token_provider,
-                )
+                from azure.identity import DefaultAzureCredential, get_bearer_token_provider
             except ImportError as error:
                 raise RuntimeError(
-                    "Microsoft Entra ID authentication requires azure-identity; "
-                    "install the 'azure' optional dependency"
-                ) from error
-            credential = get_bearer_token_provider(
-                DefaultAzureCredential(),
-                "https://cognitiveservices.azure.com/.default",
-            )
+                    "Microsoft Entra ID authentication requires azure-identity; install the 'azure' optional dependency") from error
+            credential = get_bearer_token_provider(DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default")
             self.authentication = "default_azure_credential"
 
         self.configuration = configuration
@@ -169,17 +140,15 @@ class AzureFoundryStructuredModel:
             seed=configuration.seed,
         )
 
-    def invoke(
-        self, schema: type[SchemaT], system_prompt: str, user_prompt: str
-    ) -> SchemaT:
+    def invoke(self, schema: type[SchemaT], system_prompt: str, user_prompt: str) -> SchemaT:
         return _invoke_with_repair(self._model, schema, system_prompt, user_prompt)
 
 
 def _invoke_with_repair(
-    model: Any,
-    schema: type[SchemaT],
-    system_prompt: str,
-    user_prompt: str,
+        model: Any,
+        schema: type[SchemaT],
+        system_prompt: str,
+        user_prompt: str,
 ) -> SchemaT:
     """Apply the same schema-repair policy to every LangChain provider."""
 
@@ -198,18 +167,15 @@ def _invoke_with_repair(
         except Exception as error:  # provider parsing errors vary by model
             last_error = error
             repair = (
-                "\n\nYour previous response was invalid. Return only content that "
-                f"matches the required schema. Repair attempt {attempt + 1}."
+                "\n\nYour previous response was invalid. Return only content that matches the required schema. "
+                f"Repair attempt {attempt + 1}."
             )
     raise RuntimeError(f"structured model output failed: {last_error}") from last_error
 
 
 def _scenario_prompt(scenario: Scenario) -> str:
     state = scenario.state
-    baseline = {
-        action.value: round(value, 4)
-        for action, value in scenario.ep_baseline.items()
-    }
+    baseline = {action.value: round(value, 4) for action, value in scenario.ep_baseline.items()}
     return json.dumps(
         {
             "scenario_id": scenario.scenario_id,
@@ -238,10 +204,7 @@ def _scenario_prompt(scenario: Scenario) -> str:
 
 
 def _ep_decision(scenario: Scenario, rationale: str) -> Decision:
-    action = max(
-        scenario.state.legal_actions,
-        key=lambda candidate: (scenario.ep_baseline[candidate], candidate.value),
-    )
+    action = max(scenario.state.legal_actions, key=lambda candidate: (scenario.ep_baseline[candidate], candidate.value))
     return Decision(
         action=action,
         go_for_it_play=Action.PASS if action == Action.GO_FOR_IT else None,
@@ -249,14 +212,10 @@ def _ep_decision(scenario: Scenario, rationale: str) -> Decision:
     )
 
 
-def _fallback_recommendation(
-    role: str, scenario: Scenario, error: Exception
-) -> Recommendation:
+def _fallback_recommendation(role: str, scenario: Scenario, error: Exception) -> Recommendation:
     return Recommendation(
         role=role,
-        decision=_ep_decision(
-            scenario, "Expected-points fallback after a specialist response failed."
-        ),
+        decision=_ep_decision(scenario, "Expected-points fallback after a specialist response failed"),
         confidence=0,
         argument="The specialist model response was unavailable; using the public EP baseline.",
         concerns=[str(error)[:300]],
@@ -270,9 +229,7 @@ class ExpectedPointsStrategy:
         started = time.perf_counter()
         return DecisionTrace(
             strategy=self.name,
-            decision=_ep_decision(
-                scenario, "Choose the legal action with the highest bucketed expected EPA."
-            ),
+            decision=_ep_decision(scenario, "Choose the legal action with the highest bucketed expected EPA"),
             latency_seconds=time.perf_counter() - started,
             model_calls=0,
         )
@@ -302,9 +259,7 @@ class SingleAgentStrategy:
         except Exception as error:
             failures.append(f"head_coach: {error}")
             fallback = True
-            decision = _ep_decision(
-                scenario, "Expected-points fallback after the head-coach call failed."
-            )
+            decision = _ep_decision(scenario, "Expected-points fallback after the head-coach call failed")
         return DecisionTrace(
             strategy=self.name,
             decision=decision,
@@ -322,15 +277,12 @@ class MultiAgentStrategy:
     def __init__(self, model: StructuredModel) -> None:
         self.model = model
 
-    def _initial(
-        self, role: str, focus: str, scenario: Scenario
-    ) -> Recommendation:
+    def _initial(self, role: str, focus: str, scenario: Scenario) -> Recommendation:
         result = self.model.invoke(
             Recommendation,
             (
                 f"You are the NFL staff's {role.replace('_', ' ')}. {focus} "
-                "Recommend exactly one legal action. If going for it, specify run or pass. "
-                "Use only the provided information."
+                "Recommend exactly one legal action. If going for it, specify run or pass. Use only the provided information."
             ),
             _scenario_prompt(scenario),
         )
@@ -338,11 +290,11 @@ class MultiAgentStrategy:
         return result.model_copy(update={"role": role})
 
     def _revise(
-        self,
-        role: str,
-        focus: str,
-        scenario: Scenario,
-        initial: list[Recommendation],
+            self,
+            role: str,
+            focus: str,
+            scenario: Scenario,
+            initial: list[Recommendation],
     ) -> RevisedRecommendation:
         arguments = [
             {

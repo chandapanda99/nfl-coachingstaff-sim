@@ -14,3 +14,4 @@ artifacts/
 reports/
 
 # Versioned scenario packs under data/scenarios are release artifacts and are retained.
+/config/models.json

@@ -7,6 +7,7 @@ license = "Apache-2.0"
 requires-python = ">=3.12,<3.14"
 authors = [{ name = "NFL Coaching Staff Simulator contributors" }]
 dependencies = [
+    "black>=26.3.0",
     "gradio>=6.0,<7",
     "joblib>=1.4,<2",
     "langchain-core>=1.0,<2",
@@ -45,4 +46,7 @@ filterwarnings = [
 
 [tool.ruff]
 target-version = "py312"
-line-length = 100
+line-length = 125
+
+[tool.black]
+line-length = 140

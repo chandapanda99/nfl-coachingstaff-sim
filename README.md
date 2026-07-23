@@ -44,7 +44,7 @@ The expected-points strategy works immediately. For an Ollama strategy, start an
 Ollama server and enter all of the following in the UI:
 
 - The installed Ollama model tag.
-- The model's upstream project or weight URL.
+- Optionally, the model's upstream project or weight URL.
 - Its approved SPDX license.
 - The Ollama base URL.
 
@@ -54,11 +54,14 @@ Users remain responsible for accurately declaring the selected weights' license.
 ### Azure AI Foundry
 
 Choose **Azure AI Foundry** in Gradio or pass `--provider azure_foundry` to the
-benchmark command. Supply:
+benchmark command. Interactive use requires:
 
 - The Foundry deployment name as the model.
 - The deployment endpoint ending in `/openai/v1/`.
-- The upstream model project URL and its approved open-model SPDX license.
+- Its approved open-model SPDX license.
+
+The model source URL is optional in Gradio because it is not used for inference.
+CLI LLM benchmarks require it so exported research results retain model provenance.
 
 Authentication uses `DefaultAzureCredential`, so local Azure CLI credentials,
 managed identity, workload identity, and environment-based service principals work

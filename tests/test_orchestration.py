@@ -51,10 +51,10 @@ def test_full_debate_uses_deterministic_vote_when_synthesis_fails(
         provider=ModelProvider.AZURE_FOUNDRY,
         model="open-model-deployment",
         base_url="https://example.services.ai.azure.com/openai/v1/",
-        upstream_url="https://example.org/open-model",
         license="Apache-2.0",
     )
     assert foundry.model_id == "azure_foundry:open-model-deployment"
+    assert foundry.upstream_url is None
     monkeypatch.setenv("AZURE_FOUNDRY_API_KEY", "environment-only-test-key")
     foundry_model = make_model(foundry)
     assert foundry_model.model_id == foundry.model_id
