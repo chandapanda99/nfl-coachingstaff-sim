@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.venv/
+.idea/
+
+# Downloaded nflverse data and trained artifacts are reproducible, not source.
+data/cache/
+artifacts/
+reports/
+
+# Versioned scenario packs under data/scenarios are release artifacts and are retained.

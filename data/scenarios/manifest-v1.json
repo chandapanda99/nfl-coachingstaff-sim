@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "source": "nflverse play-by-play",
+  "source_license": "CC-BY-4.0",
+  "training_seasons": [
+    2016,
+    2017,
+    2018,
+    2019,
+    2020,
+    2021,
+    2022,
+    2023
+  ],
+  "evaluation_seasons": [
+    2024,
+    2025
+  ],
+  "scenario_count": 250,
+  "sha256": {
+    "benchmark-v1.jsonl": "6c202f2528cc47016b68e2797f873af2cddbac0deafea6ab68579916a85977c1",
+    "quickstart-v1.jsonl": "4f038d9e8084d992cb6aef8393be26d088c3fc5b90d5d00674bc363125a93104"
+  }
+}
