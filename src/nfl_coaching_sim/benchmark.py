@@ -52,9 +52,7 @@ def run_benchmark(
     return results
 
 
-def paired_bootstrap(
-    values: Sequence[float], seed: int = 2026, samples: int = 2000
-) -> tuple[float, float]:
+def paired_bootstrap(values: Sequence[float], seed: int = 2026, samples: int = 2000) -> tuple[float, float]:
     array = np.asarray(values, dtype=float)
     if array.size == 0:
         return 0.0, 0.0
@@ -98,27 +96,23 @@ def write_results(results: Sequence[BenchmarkResult], path: Path) -> None:
 
 
 def read_results(path: Path) -> list[BenchmarkResult]:
-    return [
-        BenchmarkResult.model_validate_json(line)
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
+    return [BenchmarkResult.model_validate_json(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 def write_report(results: Sequence[BenchmarkResult], path: Path) -> None:
     summary = aggregate(results)
     headings = (
-        "Strategy",
-        "Scenarios",
-        "Mean WPA",
+        "Decision-Maker",
+        "Game Situations",
+        "Average WPA",
         "95% CI",
-        "Mean EPA",
-        "Regret",
-        "Best action",
-        "Fallbacks",
-        "Failures",
-        "Latency",
-        "Calls",
+        "Average EPA",
+        "Regret vs. Best Call",
+        "Won the Call",
+        "Backup Calls",
+        "Headset Errors",
+        "Time to Send In Call",
+        "Model Calls",
     )
     rows = []
     for name, values in summary.items():
@@ -137,15 +131,16 @@ def write_report(results: Sequence[BenchmarkResult], path: Path) -> None:
         )
         rows.append("<tr>" + "".join(f"<td>{html.escape(cell)}</td>" for cell in cells) + "</tr>")
     document = f"""<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><title>NFL Coaching Benchmark</title>
+<html lang="en"><head><meta charset="utf-8"><title>NFL Postgame Decision Report</title>
 <style>body{{font:16px system-ui;max-width:1200px;margin:2rem auto;padding:0 1rem}}
 table{{border-collapse:collapse;width:100%}}th,td{{padding:.55rem;border:1px solid #ccc;text-align:right}}
 th:first-child,td:first-child{{text-align:left}}caption{{text-align:left;font-size:1.5rem;font-weight:700;margin-bottom:1rem}}</style>
-</head><body><table><caption>Multi-Agent NFL Coaching Simulator</caption>
+</head><body><table><caption>NFL Coaching Staff — Postgame Decision Report</caption>
 <thead><tr>{''.join(f'<th>{html.escape(item)}</th>' for item in headings)}</tr></thead>
 <tbody>{''.join(rows)}</tbody></table>
-<p>Primary metric: expected win-probability added. Confidence intervals use a fixed-seed paired bootstrap.
-This is an observational action-value benchmark, not a causal counterfactual estimate.</p>
+<p>Primary grade: expected win-probability added. The regret column measures how much value the call left on the field
+versus the simulator's best available call. Confidence intervals use a fixed-seed paired bootstrap.
+This is an observational decision benchmark, not a claim that a different historical play call would have caused the modeled outcome.</p>
 <script type="application/json" id="summary">{html.escape(json.dumps(summary, sort_keys=True))}</script>
 </body></html>"""
     path.parent.mkdir(parents=True, exist_ok=True)

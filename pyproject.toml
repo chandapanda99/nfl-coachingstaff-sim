@@ -7,25 +7,24 @@ license = "Apache-2.0"
 requires-python = ">=3.12,<3.14"
 authors = [{ name = "NFL Coaching Staff Simulator contributors" }]
 dependencies = [
+    "azure-identity>=1.19,<2",
     "black>=26.3.0",
     "gradio>=6.0,<7",
     "joblib>=1.4,<2",
     "langchain-core>=1.0,<2",
     "langchain-ollama>=1.0,<2",
+    "langchain-openai>=1.0,<2",
     "nflreadpy>=0.1.5,<0.2",
     "numpy>=2.0,<3",
     "polars>=1.0,<2",
     "pydantic>=2.10,<3",
+    "python-dotenv>=1.0,<2",
     "scikit-learn>=1.6,<2",
     "typer>=0.15,<1",
 ]
 
 [project.optional-dependencies]
 test = ["pytest>=8.3,<9"]
-azure = [
-    "azure-identity>=1.19,<2",
-    "langchain-openai>=1.0,<2",
-]
 
 [project.scripts]
 nfl-coach = "nfl_coaching_sim.cli:app"

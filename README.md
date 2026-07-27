@@ -1,73 +1,61 @@
 # Multi-Agent NFL Coaching Simulator
 
-An open-source research application for asking whether a deliberating NFL coaching
-staff outperforms a single language-model coach or a simple expected-points policy.
-Five role agents independently recommend a call, review anonymized arguments, revise
-their positions, and send the debate to a head-coach synthesizer. A deterministic,
-held-out action-value model scores the result.
+# Multi-Agent NFL Coaching Simulator
 
-The project is local-first. It uses Gradio, LangChain, Ollama, scikit-learn,
-Polars, and nflverse data, with optional Azure AI Foundry model serving. Ollama
-remains the default, and the application does not select or download a model for you.
+An open-source research application for asking whether a deliberating NFL coaching staff outperforms a single language-model coach or a simple expected-points policy. Five
+role agents independently recommend a call, review anonymized arguments, revise their positions, and send the debate to a head-coach synthesizer. A deterministic, held-out
+action-value model scores the result.
+
+The project is local-first. Its default installation includes Gradio, LangChain, Ollama, Azure AI Foundry authentication, scikit-learn, Polars, and nflverse data. The
+application does not select or download a model for you.
 
 ## What is included
 
 - A Gradio scenario explorer with stage-by-stage deliberation updates.
-- A Typer CLI for nflverse sync, scenario construction, evaluator training, paired
-  benchmarks, and HTML reports.
-- A 25-case synthetic offline pack for trying the UI and harness without downloading
-  NFL data.
+- A Typer CLI for nflverse sync, scenario construction, evaluator training, paired benchmarks, and HTML reports.
+- A 25-case synthetic offline pack for trying the UI and harness without downloading NFL data.
 - A reproducible builder for the CC-BY-4.0 25- and 250-scenario nflverse release packs.
-- Fixed-seed WPA/EPA evaluation, an intentionally simpler bucketed EPA baseline, and
-  paired bootstrap confidence intervals.
+- Fixed-seed WPA/EPA evaluation, an intentionally simpler bucketed EPA baseline, and paired bootstrap confidence intervals.
 
-## Install
+## Quick start
 
 Use Python 3.12 or 3.13:
 
 ```shell
 python -m venv .venv
-.venv\Scripts\python -m pip install -e ".[test]"
+.venv\Scripts\python -m pip install -e .
+.venv\Scripts\nfl-coach
 ```
 
-On macOS or Linux, use `.venv/bin/python` in place of the Windows path.
-To enable Azure AI Foundry, install `".[test,azure]"` instead.
+On macOS or Linux, use `.venv/bin/` instead of `.venv\Scripts\`.
 
-Materialize the offline demo pack and launch Gradio:
+The bare `nfl-coach` command launches Gradio with the checked-in nflverse quick-start scenarios. It automatically uses `artifacts/simulator-v1.joblib` when present and
+otherwise uses the deterministic offline evaluator.
 
-```shell
-nfl-coach scenarios demo
-nfl-coach app serve --scenarios data/scenarios/demo-v1.jsonl
-```
+Use `nfl-coach serve --help` when you need a custom host, port, scenario pack, or simulator path. `python -m nfl_coaching_sim` is an equivalent startup command.
 
-The expected-points strategy works immediately. For an Ollama strategy, start an
-Ollama server and enter all of the following in the UI:
+The expected-points strategy works immediately. For an Ollama strategy, start an Ollama server and enter all of the following in the UI:
 
 - The installed Ollama model tag.
 - Optionally, the model's upstream project or weight URL.
 - Its approved SPDX license.
 - The Ollama base URL.
 
-The included software does not claim that an arbitrary Ollama tag is open source.
-Users remain responsible for accurately declaring the selected weights' license.
+The included software does not claim that an arbitrary Ollama tag is open source. Users remain responsible for accurately declaring the selected weights' license.
 
 ### Azure AI Foundry
 
-Choose **Azure AI Foundry** in Gradio or pass `--provider azure_foundry` to the
-benchmark command. Interactive use requires:
+Choose **Azure AI Foundry** in Gradio or pass `--provider azure_foundry` to the benchmark command. Interactive use requires:
 
 - The Foundry deployment name as the model.
 - The deployment endpoint ending in `/openai/v1/`.
 - Its approved open-model SPDX license.
 
-The model source URL is optional in Gradio because it is not used for inference.
-CLI LLM benchmarks require it so exported research results retain model provenance.
+The model source URL is optional in Gradio because it is not used for inference. CLI LLM benchmarks require it so exported research results retain model provenance.
 
-Authentication uses `DefaultAzureCredential`, so local Azure CLI credentials,
-managed identity, workload identity, and environment-based service principals work
-without putting secrets in the app. If key authentication is unavoidable, set
-`AZURE_FOUNDRY_API_KEY` in the process environment. Keys are never accepted through
-Gradio or CLI options and are not written to benchmark artifacts.
+Authentication uses `DefaultAzureCredential`, so local Azure CLI credentials, managed identity, workload identity, and environment-based service principals work without
+putting secrets in the app. If key authentication is unavoidable, set
+`AZURE_FOUNDRY_API_KEY` in the process environment. Keys are never accepted through Gradio or CLI options and are not written to benchmark artifacts.
 
 Example:
 
@@ -81,21 +69,27 @@ nfl-coach benchmark run ^
   --model-license Apache-2.0
 ```
 
-Azure AI Foundry is a proprietary hosted provider. The application continues to
-enforce an approved open license for the selected model, and benchmark provenance
-distinguishes the serving provider from the model license.
+Azure AI Foundry is a proprietary hosted provider. The application continues to enforce an approved open license for the selected model, and benchmark provenance distinguishes
+the serving provider from the model license.
 
-## Build the research artifacts
+## Rebuild the research artifacts
+
+The released scenarios work without setup. To download nflverse play-by-play, regenerate both scenario packs, and train the simulator in one step:
 
 ```shell
-nfl-coach data sync
-nfl-coach scenarios build
-nfl-coach simulator train
+nfl-coach setup
+```
+
+Then run a benchmark and report:
+
+```shell
 nfl-coach benchmark run --scenarios data/scenarios/quickstart-v1.jsonl
 nfl-coach benchmark report
 ```
 
-To include local-model strategies, repeat `--strategy` and provide model provenance:
+The granular `data sync`, `scenarios build`, and `simulator train` commands remain available when only one artifact needs rebuilding.
+
+To include model strategies, repeat `--strategy` and provide model provenance:
 
 ```shell
 nfl-coach benchmark run ^
@@ -111,36 +105,28 @@ Use shell-appropriate line continuation on non-Windows platforms.
 
 ## Evaluation design
 
-Training uses the 2016–2023 seasons. Released evaluation scenarios use 2024–2025 and
-are limited to regulation plays in quarters three and four, offense win probability
-from 10% through 90%, and score differential within 16 points. Nullified plays,
-kneels, spikes, and incomplete states are excluded.
+Training uses the 2016–2023 seasons. Released evaluation scenarios use 2024–2025 and are limited to regulation plays in quarters three and four, offense win probability from
+10% through 90%, and score differential within 16 points. Nullified plays, kneels, spikes, and incomplete states are excluded.
 
-The primary score is expected win-probability added. EPA, oracle regret, best-action
-rate, failures, fallbacks, latency, and model-call counts are secondary outputs.
-Neither agents nor the EP policy see the richer evaluator's counterfactual scores.
+The primary score is expected win-probability added. EPA, oracle regret, best-action rate, failures, fallbacks, latency, and model-call counts are secondary outputs. Neither
+agents nor the EP policy see the richer evaluator's counterfactual scores.
 
-This is an observational benchmark. The action-value regressors learn from choices
-NFL coaches actually made, so their counterfactual scores are not causal estimates
-and retain selection bias. Results should be described as performance against this
-released simulator—not proof that an unobserved call would have produced the modeled
-outcome.
+This is an observational benchmark. The action-value regressors learn from choices NFL coaches actually made, so their counterfactual scores are not causal estimates and
+retain selection bias. Results should be described as performance against this released simulator—not proof that an unobserved call would have produced the modeled outcome.
 
 ## Data and licenses
 
-Code is Apache-2.0. nflverse-derived scenario packs are CC-BY-4.0 and include a
-source manifest and hashes. See [data/README.md](data/README.md) for attribution and
-the public artifact schema. Raw nflverse data and model weights are never committed.
+Code is Apache-2.0. nflverse-derived scenario packs are CC-BY-4.0 and include a source manifest and hashes. See [data/README.md](data/README.md) for attribution and the public
+artifact schema. Raw nflverse data and model weights are never committed.
 
 ## Development
 
 The retained test suite has five critical-path tests:
 
 ```shell
+python -m pip install -e ".[test]"
 pytest
 ```
 
-It covers data isolation, deterministic scoring, full deliberation/fallback,
-paired benchmarking, and Gradio construction/callbacks. Temporary scripts,
-snapshots, generated reports, and low-value implementation-detail tests are not
-kept in the repository.
+It covers data isolation, deterministic scoring, full deliberation/fallback, paired benchmarking, and Gradio construction/callbacks. Temporary scripts, snapshots, generated
+reports, and low-value implementation-detail tests are not kept in the repository.

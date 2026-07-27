@@ -20,6 +20,16 @@ class Action(StrEnum):
     FIELD_GOAL = "field_goal"
     GO_FOR_IT = "go_for_it"
 
+    @property
+    def football_label(self) -> str:
+        return {
+            Action.RUN: "Run the ball",
+            Action.PASS: "Drop back to pass",
+            Action.PUNT: "Send out the punt team",
+            Action.FIELD_GOAL: "Kick the field goal",
+            Action.GO_FOR_IT: "Keep the offense on the field",
+        }[self]
+
 
 class GameState(BaseModel):
     """A pre-snap state expressed from the possession team's perspective."""
@@ -63,6 +73,21 @@ class GameState(BaseModel):
         minutes, seconds = divmod(self.game_seconds_remaining % 900, 60)
         return f"Q{self.quarter} {minutes}:{seconds:02d}"
 
+    @property
+    def down_and_distance(self) -> str:
+        ordinal = {1: "1st", 2: "2nd", 3: "3rd", 4: "4th"}[self.down]
+        goal_to_go = self.yardline_100 <= 10 and abs(self.yards_to_go - self.yardline_100) < 0.1
+        distance = "Goal" if goal_to_go else f"{self.yards_to_go:g}"
+        return f"{ordinal} & {distance}"
+
+    @property
+    def field_position(self) -> str:
+        if self.yardline_100 == 50:
+            return "the 50-yard line"
+        if self.yardline_100 < 50:
+            return f"the {self.defensive_team} {self.yardline_100:g}"
+        return f"the {self.possession_team} {100 - self.yardline_100:g}"
+
 
 class Decision(BaseModel):
     action: Action
@@ -82,6 +107,12 @@ class Decision(BaseModel):
         if self.action not in state.legal_actions:
             raise ValueError(f"{self.action.value} is illegal on down {state.down}")
         return self
+
+    @property
+    def call_label(self) -> str:
+        if self.action == Action.GO_FOR_IT and self.go_for_it_play is not None:
+            return f"Go for it — {self.go_for_it_play.football_label.lower()}"
+        return self.action.football_label
 
 
 class Recommendation(BaseModel):
@@ -110,6 +141,15 @@ class Scenario(BaseModel):
         if missing:
             raise ValueError(f"missing EP values for {sorted(a.value for a in missing)}")
         return self
+
+    @property
+    def display_name(self) -> str:
+        state = self.state
+        return (
+            f"{state.season} Week {state.week} | "
+            f"{state.possession_team} {state.possession_score} vs {state.defensive_team} {state.defensive_score} | "
+            f"{state.clock_display} | {state.down_and_distance} at {state.field_position}"
+        )
 
 
 class DebateTranscript(BaseModel):
@@ -164,16 +204,10 @@ class StageEvent(BaseModel):
     trace: DecisionTrace | None = None
 
 
-def action_vote(
-    recommendations: list[Recommendation], scenario: Scenario
-) -> Decision:
+def action_vote(recommendations: list[Recommendation], scenario: Scenario) -> Decision:
     """Deterministic vote used only when head-coach synthesis fails."""
 
-    legal = [
-        rec
-        for rec in recommendations
-        if rec.decision.action in scenario.state.legal_actions
-    ]
+    legal = [rec for rec in recommendations if rec.decision.action in scenario.state.legal_actions]
     if not legal:
         action = max(
             scenario.state.legal_actions,
@@ -183,13 +217,10 @@ def action_vote(
         return Decision(
             action=action,
             go_for_it_play=subtype,
-            rationale="Expected-points fallback because no valid agent vote was available.",
+            rationale=("The staff could not get a clean call through, so the analytics booth " "sent in the highest-EPA option."),
         )
     counts = Counter(rec.decision.action for rec in legal)
-    confidence = {
-        action: sum(rec.confidence for rec in legal if rec.decision.action == action)
-        for action in counts
-    }
+    confidence = {action: sum(rec.confidence for rec in legal if rec.decision.action == action) for action in counts}
     winner = max(
         counts,
         key=lambda action: (
@@ -210,7 +241,7 @@ def action_vote(
     return Decision(
         action=winner,
         go_for_it_play=subtype,
-        rationale="Deterministic majority fallback after head-coach synthesis failed.",
+        rationale=("The head-coach model could not get the call in before the play clock, " "so the staff consensus won the tiebreak."),
     )
 
 

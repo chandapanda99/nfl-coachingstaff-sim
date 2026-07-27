@@ -30,7 +30,8 @@ SchemaT = TypeVar("SchemaT", bound=BaseModel)
 ROLES = {
     "offensive_coordinator": "Assess execution, down-and-distance, likely defensive response, and the run/pass mechanics of the call.",
     "defensive_coordinator": (
-        "Think like the opponent: identify the coverage, pressure, box count, and counter-strategy the offense is likely to face."),
+        "Think like the opponent: identify the coverage, pressure, box count, and counter-strategy the offense is likely to face."
+    ),
     "analytics_assistant": (
         "Use the provided expected-points evidence, win-probability context, field position, and uncertainty. Do not invent statistics."
     ),
@@ -126,7 +127,8 @@ class AzureFoundryStructuredModel:
                 from azure.identity import DefaultAzureCredential, get_bearer_token_provider
             except ImportError as error:
                 raise RuntimeError(
-                    "Microsoft Entra ID authentication requires azure-identity; install the 'azure' optional dependency") from error
+                    "Microsoft Entra ID authentication requires azure-identity; install the 'azure' optional dependency"
+                ) from error
             credential = get_bearer_token_provider(DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default")
             self.authentication = "default_azure_credential"
 
@@ -215,10 +217,13 @@ def _ep_decision(scenario: Scenario, rationale: str) -> Decision:
 def _fallback_recommendation(role: str, scenario: Scenario, error: Exception) -> Recommendation:
     return Recommendation(
         role=role,
-        decision=_ep_decision(scenario, "Expected-points fallback after a specialist response failed"),
+        decision=_ep_decision(
+            scenario,
+            "The coordinator's headset went down, so the analytics booth sent in the highest-EPA call.",
+        ),
         confidence=0,
-        argument="The specialist model response was unavailable; using the public EP baseline.",
-        concerns=[str(error)[:300]],
+        argument="No clean recommendation came through from this position group; defer to the analytics card.",
+        concerns=[f"Headset communication: {str(error)[:280]}"],
     )
 
 
@@ -229,7 +234,10 @@ class ExpectedPointsStrategy:
         started = time.perf_counter()
         return DecisionTrace(
             strategy=self.name,
-            decision=_ep_decision(scenario, "Choose the legal action with the highest bucketed expected EPA"),
+            decision=_ep_decision(
+                scenario,
+                "The analytics booth sends in the legal call with the best expected points added.",
+            ),
             latency_seconds=time.perf_counter() - started,
             model_calls=0,
         )
@@ -259,7 +267,10 @@ class SingleAgentStrategy:
         except Exception as error:
             failures.append(f"head_coach: {error}")
             fallback = True
-            decision = _ep_decision(scenario, "Expected-points fallback after the head-coach call failed")
+            decision = _ep_decision(
+                scenario,
+                "The head coach did not get a clean call through before the play clock, so the analytics card takes over.",
+            )
         return DecisionTrace(
             strategy=self.name,
             decision=decision,
@@ -313,9 +324,7 @@ class MultiAgentStrategy:
                 "Review the anonymized staff recommendations, rebut their weakest claims, "
                 "then keep or revise your legal decision."
             ),
-            _scenario_prompt(scenario)
-            + "\n\nANONYMIZED INITIAL RECOMMENDATIONS:\n"
-            + json.dumps(arguments, indent=2),
+            _scenario_prompt(scenario) + "\n\nANONYMIZED INITIAL RECOMMENDATIONS:\n" + json.dumps(arguments, indent=2),
         )
         result.decision.validate_for(scenario.state)
         return result.model_copy(update={"role": role})
@@ -334,7 +343,7 @@ class MultiAgentStrategy:
                 initial.append(_fallback_recommendation(role, scenario, error))
         yield StageEvent(
             stage="recommendations",
-            message="All five specialists submitted independent recommendations.",
+            message="Every coordinator has checked the front, the clock, and the call sheet.",
         )
 
         revised: list[RevisedRecommendation] = []
@@ -348,12 +357,12 @@ class MultiAgentStrategy:
                 revised.append(
                     RevisedRecommendation(
                         **fallback.model_dump(),
-                        rebuttal="No model rebuttal was available.",
+                        rebuttal="No challenge-round adjustment came through on the headset.",
                     )
                 )
         yield StageEvent(
             stage="debate",
-            message="The staff reviewed anonymized arguments and revised its calls.",
+            message="The staff challenged tendencies, clock math, and situational risk; adjustments are in.",
         )
 
         calls += 1
@@ -368,9 +377,7 @@ class MultiAgentStrategy:
                 ),
                 _scenario_prompt(scenario)
                 + "\n\nREVISED STAFF DEBATE:\n"
-                + json.dumps(
-                    [item.model_dump(mode="json") for item in revised], indent=2
-                ),
+                + json.dumps([item.model_dump(mode="json") for item in revised], indent=2),
             )
             decision.validate_for(scenario.state)
         except Exception as error:
@@ -397,7 +404,7 @@ class MultiAgentStrategy:
         )
         yield StageEvent(
             stage="decision",
-            message=f"Head coach selected {decision.action.value}.",
+            message=f"The head coach sends in: {decision.call_label}.",
             trace=trace,
         )
 
@@ -407,7 +414,7 @@ class MultiAgentStrategy:
             if event.trace is not None:
                 final = event.trace
         if final is None:  # defensive invariant
-            raise RuntimeError("deliberation ended without a decision")
+            raise RuntimeError("The coaches' meeting ended without a legal call reaching the sideline.")
         return final
 
 
