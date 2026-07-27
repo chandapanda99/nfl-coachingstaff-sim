@@ -154,7 +154,7 @@ def create_app(scenarios: Sequence[Scenario] | None = None, simulator: Determini
                         ("Head Coach only", "single_agent"),
                         ("Full Coaching Staff", "multi_agent"),
                     ],
-                    value="expected_points",
+                    value="multi_agent",
                     label="Who Makes the Call?",
                 )
                 provider = gr.Dropdown(
