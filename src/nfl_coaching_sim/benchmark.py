@@ -7,12 +7,14 @@ import json
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import numpy as np
 
 from nfl_coaching_sim.models import BenchmarkResult, DecisionTrace, Scenario
-from nfl_coaching_sim.simulator import DeterministicSimulator
+
+if TYPE_CHECKING:
+    from nfl_coaching_sim.simulator import DeterministicSimulator
 
 
 class CoachingStrategy(Protocol):

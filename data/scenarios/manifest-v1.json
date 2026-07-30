@@ -18,7 +18,11 @@
   ],
   "scenario_count": 250,
   "sha256": {
-    "benchmark-v1.jsonl": "6c202f2528cc47016b68e2797f873af2cddbac0deafea6ab68579916a85977c1",
-    "quickstart-v1.jsonl": "4f038d9e8084d992cb6aef8393be26d088c3fc5b90d5d00674bc363125a93104"
+    "benchmark-v1.jsonl": "228505b8b8ddfe91eb061799bb3136de6f971e02f08e31b0fd90fa988c603ef7",
+    "quickstart-v1.jsonl": "20c10e6cd3ace3e8a6c5dc80159b5d39f18c6a053d76ce8ecf795463c6df3120"
+  },
+  "artifact_counts": {
+    "benchmark-v1.jsonl": 250,
+    "quickstart-v1.jsonl": 40
   }
 }

@@ -13,8 +13,8 @@ application does not select or download a model for you.
 
 - A Gradio scenario explorer with stage-by-stage deliberation updates.
 - A Typer CLI for nflverse sync, scenario construction, evaluator training, paired benchmarks, and HTML reports.
-- A 25-case synthetic offline pack for trying the UI and harness without downloading NFL data.
-- A reproducible builder for the CC-BY-4.0 25- and 250-scenario nflverse release packs.
+- A 40-case synthetic offline pack for trying the UI and harness without downloading NFL data.
+- A reproducible builder for the CC-BY-4.0 40- and 250-scenario nflverse release packs.
 - Fixed-seed WPA/EPA evaluation, an intentionally simpler bucketed EPA baseline, and paired bootstrap confidence intervals.
 
 ## Quick start
@@ -28,6 +28,15 @@ python -m venv .venv
 ```
 
 On macOS or Linux, use `.venv/bin/` instead of `.venv\Scripts\`.
+
+With uv, synchronize once and skip repeat environment checks on normal launches:
+
+```shell
+uv sync --python 3.13
+uv run --no-sync nfl-coach
+```
+
+Run a normal `uv sync` again whenever `pyproject.toml` or `uv.lock` changes.
 
 The bare `nfl-coach` command launches Gradio with the checked-in nflverse quick-start scenarios. It automatically uses `artifacts/simulator-v1.joblib` when present and
 otherwise uses the deterministic offline evaluator.

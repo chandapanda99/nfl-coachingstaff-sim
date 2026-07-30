@@ -1,4 +1,4 @@
-from nfl_coaching_sim.data import build_scenarios
+from nfl_coaching_sim.data import build_scenarios, quickstart_sample
 
 
 def _row(season: int, play_id: int, down: int, play_type: str, epa: float) -> dict:
@@ -44,8 +44,18 @@ def test_pipeline_isolates_seasons_and_emits_outcome_free_scenarios() -> None:
 
     assert [item.scenario_id for item in first] == [item.scenario_id for item in second]
     assert all(item.state.season == 2024 for item in first)
+    assert {item.state.down for item in first} == {1, 2, 3, 4}
     assert all("epa" not in item.model_dump()["state"] for item in first)
     assert all(99 not in item.ep_baseline.values() for item in first)
+
+    full_pack = build_scenarios(training, evaluation, limit=20)
+    quickstart = quickstart_sample(full_pack, limit=12)
+    assert len(quickstart) == 12
+    assert sum(item.state.down == 4 for item in quickstart) >= 5
+    assert all(
+        item.state.quarter == 4 and item.state.game_seconds_remaining <= 300 and abs(item.state.score_differential) <= 8
+        for item in quickstart
+    )
 
     leaked = training + [_row(2024, 99, 1, "run", 0)]
     try:

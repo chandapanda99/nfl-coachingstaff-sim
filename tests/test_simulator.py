@@ -4,7 +4,8 @@ from nfl_coaching_sim.simulator import DeterministicSimulator
 
 
 def _training_row(index: int) -> dict:
-    scenario = demo_scenarios()[index % 25]
+    scenarios = demo_scenarios()
+    scenario = scenarios[index % len(scenarios)]
     state = scenario.state
     play_type = "run" if index % 2 == 0 else "pass"
     return {
@@ -46,7 +47,9 @@ def test_simulator_is_deterministic_reloadable_and_has_offline_fallback(tmp_path
     artifact = tmp_path / "simulator.joblib"
     simulator.save(artifact)
     loaded_value = DeterministicSimulator.load(artifact).score(scenario, decision)
+    deferred_value = DeterministicSimulator.deferred(artifact).score(scenario, decision)
 
     assert trained_value == loaded_value
+    assert trained_value == deferred_value
     assert loaded_value.oracle_regret >= 0
     assert set(simulator.candidates(scenario)) == set(scenario.state.legal_actions)

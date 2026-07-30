@@ -25,3 +25,8 @@ excluded from scenario payloads.
 
 `manifest-v1.json` records training/evaluation seasons, scenario count, source,
 license, and SHA-256 hashes for released real-data packs.
+
+The 40-situation quick-start pack intentionally emphasizes pressure decisions:
+fourth downs, short-yardage conversion opportunities, final-five-minute
+one-score games, two-minute drives, and goal-to-go situations. The 250-situation
+benchmark remains the broader evaluation artifact.

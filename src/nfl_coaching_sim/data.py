@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections import defaultdict
-from collections.abc import Iterable, Mapping, Sequence
+from collections import defaultdict, deque
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +13,7 @@ from nfl_coaching_sim.models import Action, GameState, Scenario
 
 TRAINING_SEASONS = tuple(range(2016, 2024))
 EVALUATION_SEASONS = (2024, 2025)
+QUICKSTART_SCENARIO_COUNT = 40
 
 PBP_COLUMNS = (
     "game_id",
@@ -131,12 +132,8 @@ class ExpectedPointsBaseline:
         self.global_values: dict[Action, float] = {}
 
     def fit(self, rows: Iterable[Mapping[str, Any]]) -> ExpectedPointsBaseline:
-        bucket_values: dict[tuple[int, int, int, int, int], dict[Action, list[float]]] = (
-            defaultdict(lambda: defaultdict(list))
-        )
-        down_values: dict[int, dict[Action, list[float]]] = defaultdict(
-            lambda: defaultdict(list)
-        )
+        bucket_values: dict[tuple[int, int, int, int, int], dict[Action, list[float]]] = defaultdict(lambda: defaultdict(list))
+        down_values: dict[int, dict[Action, list[float]]] = defaultdict(lambda: defaultdict(list))
         global_values: dict[Action, list[float]] = defaultdict(list)
         for row in rows:
             if not is_late_game_candidate(row):
@@ -150,16 +147,12 @@ class ExpectedPointsBaseline:
             down_values[int(row["down"])][action].append(value)
             global_values[action].append(value)
         self.by_bucket = {
-            key: {action: sum(values) / len(values) for action, values in actions.items()}
-            for key, actions in bucket_values.items()
+            key: {action: sum(values) / len(values) for action, values in actions.items()} for key, actions in bucket_values.items()
         }
         self.by_down = {
-            down: {action: sum(values) / len(values) for action, values in actions.items()}
-            for down, actions in down_values.items()
+            down: {action: sum(values) / len(values) for action, values in actions.items()} for down, actions in down_values.items()
         }
-        self.global_values = {
-            action: sum(values) / len(values) for action, values in global_values.items()
-        }
+        self.global_values = {action: sum(values) / len(values) for action, values in global_values.items()}
         return self
 
     def values_for(self, row: Mapping[str, Any], state: GameState) -> dict[Action, float]:
@@ -173,10 +166,7 @@ class ExpectedPointsBaseline:
             Action.GO_FOR_IT: 0.02,
         }
         return {
-            action: exact.get(
-                action, down.get(action, self.global_values.get(action, defaults[action]))
-            )
-            for action in state.legal_actions
+            action: exact.get(action, down.get(action, self.global_values.get(action, defaults[action]))) for action in state.legal_actions
         }
 
 
@@ -202,9 +192,7 @@ def state_from_row(row: Mapping[str, Any]) -> GameState:
     )
 
 
-def scenario_from_row(
-    row: Mapping[str, Any], baseline: ExpectedPointsBaseline
-) -> Scenario:
+def scenario_from_row(row: Mapping[str, Any], baseline: ExpectedPointsBaseline) -> Scenario:
     state = state_from_row(row)
     raw_id = f"{state.game_id}:{state.play_id}"
     scenario_id = hashlib.sha256(raw_id.encode()).hexdigest()[:16]
@@ -232,17 +220,80 @@ def stratified_sample(scenarios: Sequence[Scenario], limit: int) -> list[Scenari
         groups[_stratum(scenario)].append(scenario)
     for values in groups.values():
         values.sort(key=lambda item: item.scenario_id)
+
+    # Build one balanced stream per down before interleaving the downs. Iterating
+    # every sorted stratum directly can exhaust the limit on first and second down.
+    streams: dict[int, deque[Scenario]] = {}
+    for down in sorted({key[0] for key in groups}):
+        keys = [key for key in sorted(groups) if key[0] == down]
+        stream: list[Scenario] = []
+        while keys:
+            next_keys = []
+            for key in keys:
+                if groups[key]:
+                    stream.append(groups[key].pop(0))
+                if groups[key]:
+                    next_keys.append(key)
+            keys = next_keys
+        streams[down] = deque(stream)
+
     selected: list[Scenario] = []
-    keys = sorted(groups)
-    while len(selected) < limit and keys:
-        next_keys = []
-        for key in keys:
-            if groups[key] and len(selected) < limit:
-                selected.append(groups[key].pop(0))
-            if groups[key]:
-                next_keys.append(key)
-        keys = next_keys
-    return sorted(selected, key=lambda item: item.scenario_id)
+    while len(selected) < limit and any(streams.values()):
+        for down in sorted(streams):
+            if streams[down] and len(selected) < limit:
+                selected.append(streams[down].popleft())
+    return selected
+
+
+def quickstart_sample(
+    scenarios: Sequence[Scenario],
+    limit: int = QUICKSTART_SCENARIO_COUNT,
+) -> list[Scenario]:
+    """Build a deterministic, coach-facing pack weighted toward pressure downs."""
+
+    selected: list[Scenario] = []
+    selected_ids: set[str] = set()
+
+    def take(count: int, predicate: Callable[[Scenario], bool]) -> None:
+        remaining = min(count, limit - len(selected))
+        if remaining <= 0:
+            return
+        available = [scenario for scenario in scenarios if scenario.scenario_id not in selected_ids and predicate(scenario)]
+        for scenario in stratified_sample(available, min(remaining, len(available))):
+            selected.append(scenario)
+            selected_ids.add(scenario.scenario_id)
+
+    one_score = lambda scenario: abs(scenario.state.score_differential) <= 8
+    take(
+        6,
+        lambda scenario: scenario.state.down == 4
+        and scenario.state.quarter == 4
+        and scenario.state.game_seconds_remaining <= 300
+        and one_score(scenario),
+    )
+    take(
+        4,
+        lambda scenario: scenario.state.down == 4 and scenario.state.yards_to_go <= 3,
+    )
+    take(
+        4,
+        lambda scenario: scenario.state.down == 4 and scenario.state.yardline_100 <= 53,
+    )
+    take(
+        8,
+        lambda scenario: scenario.state.quarter == 4 and scenario.state.game_seconds_remaining <= 120 and one_score(scenario),
+    )
+    take(
+        6,
+        lambda scenario: scenario.state.down != 4
+        and scenario.state.quarter == 4
+        and scenario.state.game_seconds_remaining <= 300
+        and one_score(scenario),
+    )
+    take(4, lambda scenario: scenario.state.yardline_100 <= 10)
+    take(4, lambda scenario: scenario.state.down == 3)
+    take(limit - len(selected), lambda scenario: True)
+    return selected[:limit]
 
 
 def build_scenarios(
@@ -257,8 +308,7 @@ def build_scenarios(
     candidates = [
         scenario_from_row(row, baseline)
         for row in evaluation_rows
-        if int(row.get("season", 0)) in EVALUATION_SEASONS
-        and is_late_game_candidate(row)
+        if int(row.get("season", 0)) in EVALUATION_SEASONS and is_late_game_candidate(row)
     ]
     return stratified_sample(candidates, limit)
 
@@ -271,15 +321,14 @@ def write_jsonl(scenarios: Sequence[Scenario], path: Path) -> str:
 
 
 def read_jsonl(path: Path) -> list[Scenario]:
-    return [
-        Scenario.model_validate_json(line)
-        for line in path.read_text(encoding="utf-8").splitlines()
-        if line.strip()
-    ]
+    return [Scenario.model_validate_json(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
 def write_manifest(
-    path: Path, files: Mapping[str, str], scenario_count: int
+    path: Path,
+    files: Mapping[str, str],
+    scenario_count: int,
+    artifact_counts: Mapping[str, int] | None = None,
 ) -> None:
     manifest = {
         "schema_version": "1.0",
@@ -290,6 +339,8 @@ def write_manifest(
         "scenario_count": scenario_count,
         "sha256": dict(files),
     }
+    if artifact_counts is not None:
+        manifest["artifact_counts"] = dict(artifact_counts)
     path.write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
 
@@ -304,7 +355,7 @@ def demo_scenarios() -> list[Scenario]:
         ("BAL", "CIN"),
         ("SF", "LAR"),
     )
-    for index in range(25):
+    for index in range(40):
         offense, defense = teams[index % len(teams)]
         down = index % 4 + 1
         offense_score = 17 + index % 11

@@ -6,11 +6,12 @@ import json
 import os
 import time
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from enum import StrEnum
 from typing import Any, Protocol, TypeVar
 from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, HttpUrl, model_validator
+from pydantic import BaseModel, Field, HttpUrl, ValidationError, model_validator
 
 from nfl_coaching_sim.models import (
     Action,
@@ -102,7 +103,7 @@ class LangChainOllamaModel:
             base_url=configuration.base_url,
             temperature=configuration.temperature,
             seed=configuration.seed,
-            validate_model_on_init=True,
+            validate_model_on_init=False,
         )
 
     def invoke(self, schema: type[SchemaT], system_prompt: str, user_prompt: str) -> SchemaT:
@@ -166,13 +167,24 @@ def _invoke_with_repair(
                 ]
             )
             return schema.model_validate(result)
-        except Exception as error:  # provider parsing errors vary by model
+        except Exception as error:
+            if not _is_repairable_output_error(error):
+                raise
             last_error = error
             repair = (
                 "\n\nYour previous response was invalid. Return only content that matches the required schema. "
                 f"Repair attempt {attempt + 1}."
             )
     raise RuntimeError(f"structured model output failed: {last_error}") from last_error
+
+
+def _is_repairable_output_error(error: Exception) -> bool:
+    """Retry malformed model output without replaying transport or authentication failures."""
+
+    return isinstance(error, (ValidationError, json.JSONDecodeError, ValueError)) or type(error).__name__ in {
+        "OutputParserException",
+        "StructuredOutputError",
+    }
 
 
 def _scenario_prompt(scenario: Scenario) -> str:
@@ -285,8 +297,11 @@ class SingleAgentStrategy:
 class MultiAgentStrategy:
     name = "multi_agent"
 
-    def __init__(self, model: StructuredModel) -> None:
+    def __init__(self, model: StructuredModel, max_parallel_calls: int = 5) -> None:
+        if not 1 <= max_parallel_calls <= len(ROLES):
+            raise ValueError(f"max_parallel_calls must be between 1 and {len(ROLES)}")
         self.model = model
+        self.max_parallel_calls = max_parallel_calls
 
     def _initial(self, role: str, focus: str, scenario: Scenario) -> Recommendation:
         result = self.model.invoke(
@@ -332,34 +347,66 @@ class MultiAgentStrategy:
     def iter_decide(self, scenario: Scenario) -> Iterator[StageEvent]:
         started = time.perf_counter()
         failures: list[str] = []
-        calls = 0
-        initial: list[Recommendation] = []
-        for role, focus in ROLES.items():
-            calls += 1
-            try:
-                initial.append(self._initial(role, focus, scenario))
-            except Exception as error:
-                failures.append(f"{role} initial: {error}")
-                initial.append(_fallback_recommendation(role, scenario, error))
+        role_order = tuple(ROLES)
+        calls = len(role_order)
+        initial_by_role: dict[str, Recommendation] = {}
+        initial_errors: dict[str, Exception] = {}
+        with ThreadPoolExecutor(
+                max_workers=self.max_parallel_calls,
+                thread_name_prefix="opening-staff-call",
+        ) as executor:
+            future_roles = {executor.submit(self._initial, role, ROLES[role], scenario): role for role in role_order}
+            for future in as_completed(future_roles):
+                role = future_roles[future]
+                try:
+                    recommendation = future.result()
+                except Exception as error:
+                    initial_errors[role] = error
+                    recommendation = _fallback_recommendation(role, scenario, error)
+                initial_by_role[role] = recommendation
+                yield StageEvent(
+                    stage=f"recommendation:{role}",
+                    message=f"{role.replace('_', ' ').title()} sends in " f"{recommendation.decision.call_label}",
+                )
+        for role in role_order:
+            if role in initial_errors:
+                failures.append(f"{role} initial: {initial_errors[role]}")
+        initial = [initial_by_role[role] for role in role_order]
         yield StageEvent(
             stage="recommendations",
             message="Every coordinator has checked the front, the clock, and the call sheet.",
         )
 
-        revised: list[RevisedRecommendation] = []
-        for role, focus in ROLES.items():
-            calls += 1
-            try:
-                revised.append(self._revise(role, focus, scenario, initial))
-            except Exception as error:
-                failures.append(f"{role} revision: {error}")
-                fallback = _fallback_recommendation(role, scenario, error)
-                revised.append(
-                    RevisedRecommendation(
+        calls += len(role_order)
+        revised_by_role: dict[str, RevisedRecommendation] = {}
+        revision_errors: dict[str, Exception] = {}
+        with ThreadPoolExecutor(
+                max_workers=self.max_parallel_calls,
+                thread_name_prefix="challenge-round-call",
+        ) as executor:
+            future_roles = {executor.submit(self._revise, role, ROLES[role], scenario, initial): role for role in role_order}
+            for future in as_completed(future_roles):
+                role = future_roles[future]
+                try:
+                    recommendation = future.result()
+                except Exception as error:
+                    revision_errors[role] = error
+                    fallback = _fallback_recommendation(role, scenario, error)
+                    recommendation = RevisedRecommendation(
                         **fallback.model_dump(),
                         rebuttal="No challenge-round adjustment came through on the headset.",
                     )
+                revised_by_role[role] = recommendation
+                yield StageEvent(
+                    stage=f"revision:{role}",
+                    message=(
+                        f"{role.replace('_', ' ').title()} finishes the challenge round " f"with {recommendation.decision.call_label}."
+                    ),
                 )
+        for role in role_order:
+            if role in revision_errors:
+                failures.append(f"{role} revision: {revision_errors[role]}")
+        revised = [revised_by_role[role] for role in role_order]
         yield StageEvent(
             stage="debate",
             message="The staff challenged tendencies, clock math, and situational risk; adjustments are in.",
