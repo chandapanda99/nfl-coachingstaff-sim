@@ -1,11 +1,11 @@
 [project]
 name = "nfl-coachingstaff-sim"
 version = "0.1.0"
-description = "A reproducible multi-agent NFL late-game decision simulator"
+description = "A reproducible multi-agent NFL late-game & clutch decision simulator"
 readme = "README.md"
 license = "Apache-2.0"
 requires-python = ">=3.12,<3.14"
-authors = [{ name = "NFL Coaching Staff Simulator contributors" }]
+authors = [{ name = "Aayush Chanda" }]
 dependencies = [
     "azure-identity>=1.19,<2",
     "black>=26.3.0",
@@ -39,13 +39,11 @@ packages = ["src/nfl_coaching_sim"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q"
-filterwarnings = [
-    "ignore:Setting the shape on a NumPy array has been deprecated:DeprecationWarning:joblib.*",
-]
+filterwarnings = ["ignore:Setting the shape on a NumPy array has been deprecated:DeprecationWarning:joblib.*"]
 
 [tool.ruff]
 target-version = "py312"
 line-length = 125
 
 [tool.black]
-line-length = 140
+line-length = 142

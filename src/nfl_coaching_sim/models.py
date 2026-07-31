@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+import re
 from collections import Counter
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 SCENARIO_SCHEMA_VERSION = "1.0"
-PROMPT_VERSION = "1.0"
+PROMPT_VERSION = "2.0"
 SIMULATOR_VERSION = "1.0"
 
 
@@ -70,7 +71,8 @@ class GameState(BaseModel):
 
     @property
     def clock_display(self) -> str:
-        minutes, seconds = divmod(self.game_seconds_remaining % 900, 60)
+        quarter_seconds = self.game_seconds_remaining - max(0, 4 - self.quarter) * 900
+        minutes, seconds = divmod(max(0, min(900, quarter_seconds)), 60)
         return f"Q{self.quarter} {minutes}:{seconds:02d}"
 
     @property
@@ -115,12 +117,83 @@ class Decision(BaseModel):
         return self.action.football_label
 
 
+class EvidenceItem(BaseModel):
+    """A pre-snap fact that an agent may cite in its recommendation."""
+
+    model_config = ConfigDict(frozen=True)
+
+    evidence_id: str = Field(pattern=r"^[A-Z][A-Z0-9_]+$")
+    category: Literal["state", "clock", "score", "field_position", "baseline"]
+    statement: str = Field(min_length=1, max_length=500)
+
+
+class SituationBrief(BaseModel):
+    """Deterministic football context derived without post-play information."""
+
+    model_config = ConfigDict(frozen=True)
+
+    score_context: str
+    clock_priority: Literal["preserve", "drain", "balanced"]
+    field_zone: str
+    distance_bucket: Literal["short", "manageable", "medium", "long"]
+    approximate_field_goal_yards: int = Field(ge=17, le=117)
+    field_goal_score_effect: str
+    minimum_scoring_possessions_to_tie: int = Field(ge=0)
+    two_minute_warning_pending: bool
+    first_down_can_end_game: bool
+    first_down_clock_window_seconds: int = Field(ge=0)
+    evidence: list[EvidenceItem] = Field(min_length=1)
+
+    @property
+    def evidence_ids(self) -> set[str]:
+        return {item.evidence_id for item in self.evidence}
+
+
+class ActionAssessment(BaseModel):
+    """A concise, evidence-linked evaluation of one legal coaching option."""
+
+    action: Action
+    advantages: list[str] = Field(min_length=1, max_length=5)
+    risks: list[str] = Field(min_length=1, max_length=5)
+    clock_effect: str = Field(min_length=1, max_length=500)
+    evidence_ids: list[str] = Field(min_length=1, max_length=10)
+    support_score: float = Field(ge=0, le=1)
+
+    @field_validator("evidence_ids", mode="before")
+    @classmethod
+    def normalize_evidence_id_tokens(cls, value: Any) -> Any:
+        """Remove prose and punctuation accidentally appended to citation tokens."""
+
+        if not isinstance(value, (list, tuple)):
+            return value
+        normalized: list[Any] = []
+        for citation in value:
+            if not isinstance(citation, str):
+                normalized.append(citation)
+                continue
+            token = re.match(r"^[\s\"'`]*([A-Z][A-Z0-9_]*)", citation.strip().upper())
+            normalized.append(token.group(1) if token else citation.strip())
+        return list(dict.fromkeys(normalized))
+
+
 class Recommendation(BaseModel):
     role: str
     decision: Decision
     confidence: float = Field(ge=0, le=1)
     argument: str = Field(min_length=1, max_length=4000)
     concerns: list[str] = Field(default_factory=list, max_length=8)
+    action_assessments: list[ActionAssessment] = Field(min_length=1, max_length=5)
+    closest_alternative: Action
+    switch_condition: str = Field(min_length=1, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_action_assessments(self) -> Recommendation:
+        actions = [assessment.action for assessment in self.action_assessments]
+        if len(actions) != len(set(actions)):
+            raise ValueError("action assessments must contain unique actions")
+        if self.closest_alternative == self.decision.action:
+            raise ValueError("closest_alternative must differ from the recommended action")
+        return self
 
 
 class RevisedRecommendation(Recommendation):

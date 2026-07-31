@@ -38,12 +38,7 @@ def _sync_data(output_dir: Path) -> None:
     evaluation.write_parquet(output_dir / "pbp-evaluation-2024-2025.parquet")
 
 
-def _build_scenario_packs(
-        training: Path,
-        evaluation: Path,
-        output_dir: Path,
-        limit: int,
-) -> None:
+def _build_scenario_packs(training: Path, evaluation: Path, output_dir: Path, limit: int) -> None:
     from nfl_coaching_sim.data import (
         QUICKSTART_SCENARIO_COUNT,
         build_scenarios,
@@ -98,10 +93,10 @@ def _load_startup_assets(scenarios_path: Path | None, simulator_path: Path | Non
 
 
 def _launch_app(
-        scenarios_path: Path | None = None,
-        simulator_path: Path | None = None,
-        host: str = "127.0.0.1",
-        port: int = 7860,
+    scenarios_path: Path | None = None,
+    simulator_path: Path | None = None,
+    host: str = "127.0.0.1",
+    port: int = 7860,
 ) -> None:
     from nfl_coaching_sim.app import create_app, create_app_theme, load_app_css
 
@@ -127,7 +122,7 @@ def main(ctx: typer.Context) -> None:
 
 @data_app.command("sync")
 def sync_data(
-        output_dir: Annotated[Path, typer.Option()] = DEFAULT_CACHE_DIR,
+    output_dir: Annotated[Path, typer.Option()] = DEFAULT_CACHE_DIR,
 ) -> None:
     """Download the fixed train/evaluation seasons as Parquet caches."""
 
@@ -145,10 +140,10 @@ def _read_parquet(path: Path) -> list[dict]:
 
 @scenarios_app.command("build")
 def scenarios_build(
-        training: Annotated[Path, typer.Option()] = Path("data/cache/pbp-training-2016-2023.parquet"),
-        evaluation: Annotated[Path, typer.Option()] = Path("data/cache/pbp-evaluation-2024-2025.parquet"),
-        output_dir: Annotated[Path, typer.Option()] = DEFAULT_SCENARIO_DIR,
-        limit: Annotated[int, typer.Option(min=25)] = 250,
+    training: Annotated[Path, typer.Option()] = Path("data/cache/pbp-training-2016-2023.parquet"),
+    evaluation: Annotated[Path, typer.Option()] = Path("data/cache/pbp-evaluation-2024-2025.parquet"),
+    output_dir: Annotated[Path, typer.Option()] = DEFAULT_SCENARIO_DIR,
+    limit: Annotated[int, typer.Option(min=25)] = 250,
 ) -> None:
     """Build benchmark and quick-start scenario packs from cached nflverse data."""
 
@@ -158,7 +153,7 @@ def scenarios_build(
 
 @scenarios_app.command("demo")
 def scenarios_demo(
-        output: Annotated[Path, typer.Option()] = Path("data/scenarios/demo-v1.jsonl"),
+    output: Annotated[Path, typer.Option()] = Path("data/scenarios/demo-v1.jsonl"),
 ) -> None:
     """Materialize the synthetic offline quick-start pack."""
 
@@ -171,8 +166,8 @@ def scenarios_demo(
 
 @simulator_app.command("train")
 def simulator_train(
-        training: Annotated[Path, typer.Option()] = Path("data/cache/pbp-training-2016-2023.parquet"),
-        output: Annotated[Path, typer.Option()] = DEFAULT_SIMULATOR_PATH,
+    training: Annotated[Path, typer.Option()] = Path("data/cache/pbp-training-2016-2023.parquet"),
+    output: Annotated[Path, typer.Option()] = DEFAULT_SIMULATOR_PATH,
 ) -> None:
     """Train and save the fixed-seed action-value evaluator."""
 
@@ -182,9 +177,9 @@ def simulator_train(
 
 @app.command("setup")
 def setup(
-        cache_dir: Annotated[Path, typer.Option()] = DEFAULT_CACHE_DIR,
-        scenario_dir: Annotated[Path, typer.Option()] = DEFAULT_SCENARIO_DIR,
-        simulator_path: Annotated[Path, typer.Option()] = DEFAULT_SIMULATOR_PATH,
+    cache_dir: Annotated[Path, typer.Option()] = DEFAULT_CACHE_DIR,
+    scenario_dir: Annotated[Path, typer.Option()] = DEFAULT_SCENARIO_DIR,
+    simulator_path: Annotated[Path, typer.Option()] = DEFAULT_SIMULATOR_PATH,
 ) -> None:
     """Download nflverse data and rebuild all local research artifacts."""
 
@@ -199,17 +194,16 @@ def setup(
 
 
 def _strategy(
-        name: str,
-        provider: str,
-        model: str | None,
-        upstream_url: str | None,
-        model_license: str | None,
-        base_url: str,
+    name: str,
+    provider: str,
+    model: str | None,
+    upstream_url: str | None,
+    model_license: str | None,
+    base_url: str,
 ):
     from nfl_coaching_sim.agents import (
         ExpectedPointsStrategy,
         ModelConfiguration,
-        ModelProvider,
         MultiAgentStrategy,
         SingleAgentStrategy,
         make_model,
@@ -218,12 +212,10 @@ def _strategy(
     if name == "expected_points":
         return ExpectedPointsStrategy()
     if not model or not upstream_url or not model_license:
-        raise typer.BadParameter(
-            "LLM benchmark exports require --model, --upstream-url, and " "--model-license for reproducible provenance"
-        )
+        raise typer.BadParameter("LLM benchmark exports require --model, --upstream-url, and " "--model-license for reproducible provenance")
     llm = make_model(
         ModelConfiguration(
-            provider=ModelProvider(provider),
+            provider=provider,
             model=model,
             upstream_url=HttpUrl(upstream_url),
             license=model_license,
@@ -235,15 +227,15 @@ def _strategy(
 
 @benchmark_app.command("run")
 def benchmark_run(
-        scenarios_path: Annotated[Path, typer.Option("--scenarios")] = Path("data/scenarios/demo-v1.jsonl"),
-        output: Annotated[Path, typer.Option()] = Path("reports/results.jsonl"),
-        strategies: Annotated[list[str], typer.Option("--strategy", help="Repeat for multiple strategies.")] = ["expected_points"],
-        simulator_path: Annotated[Path | None, typer.Option()] = None,
-        model: Annotated[str | None, typer.Option()] = None,
-        provider: Annotated[str, typer.Option(help="ollama or azure_foundry")] = "ollama",
-        upstream_url: Annotated[str | None, typer.Option()] = None,
-        model_license: Annotated[str | None, typer.Option()] = None,
-        base_url: Annotated[str, typer.Option()] = "http://127.0.0.1:11434",
+    scenarios_path: Annotated[Path, typer.Option("--scenarios")] = Path("data/scenarios/demo-v1.jsonl"),
+    output: Annotated[Path, typer.Option()] = Path("reports/results.jsonl"),
+    strategies: Annotated[list[str], typer.Option("--strategy", help="Repeat for multiple strategies.")] = ["expected_points"],
+    simulator_path: Annotated[Path | None, typer.Option()] = None,
+    model: Annotated[str | None, typer.Option()] = None,
+    provider: Annotated[str, typer.Option(help="Registered LangChain model provider ID.")] = "ollama",
+    upstream_url: Annotated[str | None, typer.Option()] = None,
+    model_license: Annotated[str | None, typer.Option()] = None,
+    base_url: Annotated[str, typer.Option()] = "http://127.0.0.1:11434",
 ) -> None:
     """Run paired strategies over a scenario pack."""
 
@@ -265,8 +257,8 @@ def benchmark_run(
 
 @benchmark_app.command("report")
 def benchmark_report(
-        results: Annotated[Path, typer.Option()] = Path("reports/results.jsonl"),
-        output: Annotated[Path, typer.Option()] = Path("reports/benchmark.html"),
+    results: Annotated[Path, typer.Option()] = Path("reports/results.jsonl"),
+    output: Annotated[Path, typer.Option()] = Path("reports/benchmark.html"),
 ) -> None:
     """Create a self-contained HTML report."""
 
@@ -278,10 +270,10 @@ def benchmark_report(
 
 @ui_app.command("serve")
 def app_serve(
-        scenarios_path: Annotated[Path | None, typer.Option("--scenarios")] = None,
-        simulator_path: Annotated[Path | None, typer.Option()] = None,
-        host: Annotated[str, typer.Option()] = "127.0.0.1",
-        port: Annotated[int, typer.Option()] = 7860,
+    scenarios_path: Annotated[Path | None, typer.Option("--scenarios")] = None,
+    simulator_path: Annotated[Path | None, typer.Option()] = None,
+    host: Annotated[str, typer.Option()] = "127.0.0.1",
+    port: Annotated[int, typer.Option()] = 7860,
 ) -> None:
     """Launch the interactive Gradio application."""
 
@@ -290,10 +282,10 @@ def app_serve(
 
 @app.command("serve")
 def serve(
-        scenarios_path: Annotated[Path | None, typer.Option("--scenarios")] = None,
-        simulator_path: Annotated[Path | None, typer.Option()] = None,
-        host: Annotated[str, typer.Option()] = "127.0.0.1",
-        port: Annotated[int, typer.Option()] = 7860,
+    scenarios_path: Annotated[Path | None, typer.Option("--scenarios")] = None,
+    simulator_path: Annotated[Path | None, typer.Option()] = None,
+    host: Annotated[str, typer.Option()] = "127.0.0.1",
+    port: Annotated[int, typer.Option()] = 7860,
 ) -> None:
     """Launch Gradio with optional custom assets and network settings."""
 

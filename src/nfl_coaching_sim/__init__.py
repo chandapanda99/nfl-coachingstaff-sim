@@ -2,16 +2,20 @@
 
 from typing import TYPE_CHECKING, Any
 
+from nfl_coaching_sim.football import build_situation_brief
 from nfl_coaching_sim.models import (
     Action,
+    ActionAssessment,
     ActionValue,
     BenchmarkResult,
     DebateTranscript,
     Decision,
     DecisionTrace,
+    EvidenceItem,
     GameState,
     Recommendation,
     Scenario,
+    SituationBrief,
 )
 
 if TYPE_CHECKING:
@@ -19,15 +23,19 @@ if TYPE_CHECKING:
 
 __all__ = [
     "Action",
+    "ActionAssessment",
     "ActionValue",
     "BenchmarkResult",
     "DebateTranscript",
     "Decision",
     "DecisionTrace",
     "DeterministicSimulator",
+    "EvidenceItem",
     "GameState",
     "Recommendation",
     "Scenario",
+    "SituationBrief",
+    "build_situation_brief",
 ]
 
 __version__ = "0.1.0"

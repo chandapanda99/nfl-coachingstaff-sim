@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
+import math
 import os
+import re
 from collections.abc import Iterator, Sequence
 from html import escape
 from importlib.resources import files
@@ -18,9 +21,10 @@ from nfl_coaching_sim.agents import (
     MultiAgentStrategy,
     SingleAgentStrategy,
     make_model,
+    model_provider_choices,
 )
-from nfl_coaching_sim.data import demo_scenarios
-from nfl_coaching_sim.models import Action, ActionValue, DecisionTrace, Scenario
+from nfl_coaching_sim.data import ExpectedPointsBaseline, demo_scenarios
+from nfl_coaching_sim.models import Action, ActionValue, DecisionTrace, GameState, Scenario
 
 if TYPE_CHECKING:
     from nfl_coaching_sim.simulator import DeterministicSimulator
@@ -41,7 +45,7 @@ def create_app_theme() -> Any:
 
     return gr.themes.Soft(
         primary_hue="orange",
-        secondary_hue="indigo",
+        secondary_hue="blue",
         neutral_hue="slate",
         font=("Aptos", "ui-sans-serif", "system-ui", "sans-serif"),
         font_mono=("ui-monospace", "Consolas", "monospace"),
@@ -54,6 +58,131 @@ def create_app_theme() -> Any:
         button_primary_border_color_dark="#fb923c",
         button_primary_text_color="#ffffff",
         button_primary_text_color_dark="#ffffff",
+    )
+
+
+def create_custom_scenario(
+    season: int,
+    week: int,
+    possession_team: str,
+    defensive_team: str,
+    possession_score: int,
+    defensive_score: int,
+    quarter: int,
+    clock: str,
+    down: int,
+    yards_to_go: float,
+    field_side: str,
+    yard_line: float,
+    possession_timeouts: int,
+    defensive_timeouts: int,
+    win_probability_percent: float | None = None,
+    expected_points: float | None = None,
+) -> Scenario:
+    """Build a validated, session-only scenario from coach-friendly form values."""
+
+    offense = possession_team.strip().upper()
+    defense = defensive_team.strip().upper()
+    if not re.fullmatch(r"[A-Z0-9]{2,4}", offense):
+        raise ValueError("Offense must be a 2–4 character team abbreviation, such as BUF, CHI, KC, etc...")
+    if not re.fullmatch(r"[A-Z0-9]{2,4}", defense):
+        raise ValueError("Defense must be a 2–4 character team abbreviation, such as BUF, CHI, KC, etc...")
+    if offense == defense:
+        raise ValueError("Offense and defense must be different teams.")
+
+    clock_match = re.fullmatch(r"\s*(\d{1,2}):([0-5]\d)\s*", clock)
+    if clock_match is None:
+        raise ValueError("Game clock must use MM:SS format, such as 2:35.")
+    minutes, seconds = (int(value) for value in clock_match.groups())
+    if minutes > 15 or (minutes == 15 and seconds != 0):
+        raise ValueError("Game clock must be between 0:00 and 15:00.")
+    seconds_in_quarter = minutes * 60 + seconds
+
+    normalized_side = field_side.strip().lower()
+    if normalized_side == "midfield":
+        yardline_100 = 50.0
+    elif normalized_side == "offense":
+        if not 1 <= yard_line <= 49:
+            raise ValueError("On the offense's side, enter a yard line from 1 through 49.")
+        yardline_100 = 100.0 - float(yard_line)
+    elif normalized_side == "defense":
+        if not 1 <= yard_line <= 49:
+            raise ValueError("On the defense's side, enter a yard line from 1 through 49.")
+        yardline_100 = float(yard_line)
+    else:
+        raise ValueError("Choose whether the ball is on the offense's side, at midfield, or on the defense's side.")
+
+    game_seconds_remaining = (4 - int(quarter)) * 900 + seconds_in_quarter
+    score_differential = int(possession_score) - int(defensive_score)
+    if win_probability_percent is None:
+        elapsed_share = 1 - game_seconds_remaining / 3600
+        log_odds = score_differential * (0.12 + 0.2 * elapsed_share) + (50 - yardline_100) * 0.012
+        win_probability = 1 / (1 + math.exp(-log_odds))
+    else:
+        if not 0 <= win_probability_percent <= 100:
+            raise ValueError("Offense win probability must be between 0 and 100 percent.")
+        win_probability = float(win_probability_percent) / 100
+
+    if expected_points is None:
+        expected_points_value = max(
+            -2.5,
+            min(6.5, 6.5 - 0.075 * yardline_100 - 0.35 * (int(down) - 1) - 0.04 * max(0, yards_to_go - 10)),
+        )
+    else:
+        expected_points_value = float(expected_points)
+
+    identity = "|".join(
+        str(value)
+        for value in (
+            season,
+            week,
+            offense,
+            defense,
+            possession_score,
+            defensive_score,
+            quarter,
+            seconds_in_quarter,
+            down,
+            yards_to_go,
+            yardline_100,
+            possession_timeouts,
+            defensive_timeouts,
+        )
+    )
+    digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:12]
+    state = GameState(
+        game_id=f"CUSTOM-{digest}",
+        play_id=int(digest[:8], 16),
+        season=int(season),
+        week=int(week),
+        quarter=int(quarter),
+        game_seconds_remaining=game_seconds_remaining,
+        down=int(down),
+        yards_to_go=float(yards_to_go),
+        yardline_100=yardline_100,
+        possession_team=offense,
+        defensive_team=defense,
+        possession_score=int(possession_score),
+        defensive_score=int(defensive_score),
+        possession_timeouts=int(possession_timeouts),
+        defensive_timeouts=int(defensive_timeouts),
+        win_probability=win_probability,
+        expected_points=expected_points_value,
+    )
+    baseline_row = {
+        "down": state.down,
+        "ydstogo": state.yards_to_go,
+        "yardline_100": state.yardline_100,
+        "game_seconds_remaining": state.game_seconds_remaining,
+        "posteam_score": state.possession_score,
+        "defteam_score": state.defensive_score,
+    }
+    return Scenario(
+        scenario_id=f"custom-{digest}",
+        state=state,
+        ep_baseline=ExpectedPointsBaseline().values_for(baseline_row, state),
+        source="user-created session scenario",
+        source_license="User-provided",
     )
 
 
@@ -181,8 +310,8 @@ def _decision_card(trace: DecisionTrace) -> str:
         Action.FIELD_GOAL: "🦵🥅",
         Action.GO_FOR_IT: "📣",
     }[trace.decision.action]
-    fallback = '<span class="warning-chip">Fallback call used</span>' if trace.fallback_used else ""
-    model_name = _safe(trace.model_id or "Deterministic analytics policy")
+    fallback = '<span class="warning-chip">Fallback Call Used</span>' if trace.fallback_used else ""
+    model_name = _safe(trace.model_id or "Deterministic Analytics Policy")
     return f"""
 <section class="coach-card result-card decision-card" aria-label="Head Coach's call">
   <header class="coach-card__header">
@@ -275,6 +404,20 @@ def scenario_view(scenario_id: str, scenario_payloads: Sequence[dict[str, Any]])
     return _pre_snap_card(scenario), _analytics_card(scenario)
 
 
+def scenario_view_with_reset(scenario_id: str, scenario_payloads: Sequence[dict[str, Any]]) -> tuple[str, str, str, str, str, str]:
+    """Render a fresh call sheet and clear analysis from the prior situation."""
+
+    state_html, analytics_html = scenario_view(scenario_id, scenario_payloads)
+    return (
+        state_html,
+        analytics_html,
+        _live_status("New situation is on the call sheet. Ready for Coach to send in the call."),
+        "",
+        _decision_placeholder(),
+        _grade_placeholder(),
+    )
+
+
 def _transcript_markdown(trace: DecisionTrace) -> str:
     if trace.transcript is None:
         strategy_name = {
@@ -284,41 +427,53 @@ def _transcript_markdown(trace: DecisionTrace) -> str:
         return f"### {strategy_name}: {trace.decision.call_label}\n\n{trace.decision.rationale}"
     sections = ["### Opening Staff Calls"]
     for rec in trace.transcript.initial:
+        assessments = "\n".join(
+            (
+                f"- **{assessment.action.football_label}: {assessment.support_score:.0%} support** — "
+                f"Upside: {assessment.advantages[0]} Risk: {assessment.risks[0]} "
+                f"Clock: {assessment.clock_effect} Evidence: {', '.join(assessment.evidence_ids)}"
+            )
+            for assessment in rec.action_assessments
+        )
         sections.append(
-            f"**{rec.role.replace('_', ' ').title()} — {rec.decision.call_label} " f"({rec.confidence:.0%} confidence)**\n\n{rec.argument}"
+            f"**{rec.role.replace('_', ' ').title()} — {rec.decision.call_label} "
+            f"({rec.confidence:.0%} confidence)**\n\n{rec.argument}\n\n"
+            f"{assessments}\n\n"
+            f"**Closest alternative:** {rec.closest_alternative.football_label}  \n"
+            f"**Switch point:** {rec.switch_condition}"
         )
     sections.append("### Debate-and-Discuss Round")
     for rec in trace.transcript.revised:
-        sections.append(f"**{rec.role.replace('_', ' ').title()} — {rec.decision.call_label}**\n\n{rec.rebuttal}")
+        sections.append(
+            f"**{rec.role.replace('_', ' ').title()} — {rec.decision.call_label}**\n\n{rec.rebuttal}\n\n"
+            f"**Closest alternative:** {rec.closest_alternative.football_label}  \n"
+            f"**Switch point:** {rec.switch_condition}"
+        )
     if trace.failures:
         sections.append("### Headset / Communication Issues\n\n" + "\n".join(f"- {item}" for item in trace.failures))
     return "\n\n".join(sections)
 
 
 def run_strategy_events(
-        scenario_id: str,
-        strategy_name: str,
-        provider_name: str,
-        model_name: str,
-        upstream_url: str,
-        model_license: str,
-        base_url: str,
-        scenario_payloads: Sequence[dict[str, Any]],
-        simulator: DeterministicSimulator,
+    scenario_id: str,
+    strategy_name: str,
+    provider_name: str,
+    model_name: str,
+    upstream_url: str,
+    model_license: str,
+    base_url: str,
+    scenario_payloads: Sequence[dict[str, Any]],
+    simulator: DeterministicSimulator,
 ) -> Iterator[tuple[str, str, str, str]]:
+    yield _live_status("Getting the Call Sheet ready..."), "", _decision_placeholder(), _grade_placeholder()
     scenario = next(Scenario.model_validate(item) for item in scenario_payloads if item["scenario_id"] == scenario_id)
-    yield (
-        _live_status("Breaking the huddle and getting the call sheet ready…"),
-        "",
-        _decision_placeholder(),
-        _grade_placeholder(),
-    )
+    yield _live_status("Team is huddling up..."), "", _decision_placeholder(), _grade_placeholder()
     if strategy_name == "expected_points":
         strategy: Any = ExpectedPointsStrategy()
         trace = strategy.decide(scenario)
     else:
         configuration = ModelConfiguration(
-            provider=ModelProvider(provider_name),
+            provider=provider_name,
             model=model_name,
             upstream_url=HttpUrl(upstream_url) if upstream_url else None,
             license=model_license,
@@ -360,37 +515,142 @@ def create_app(scenarios: Sequence[Scenario] | None = None, simulator: Determini
     initial_state, initial_analytics = scenario_view(first.scenario_id, payloads)
 
     def run_callback(
-            scenario_id: str,
-            strategy_name: str,
-            provider_name: str,
-            model: str,
-            source: str,
-            license_name: str,
-            url: str,
-            items: Sequence[dict[str, Any]],
+        scenario_id: str,
+        strategy_name: str,
+        provider_name: str,
+        model: str,
+        source: str,
+        license_name: str,
+        url: str,
+        items: Sequence[dict[str, Any]],
     ) -> Iterator[tuple[str, str, str, str]]:
         yield from run_strategy_events(scenario_id, strategy_name, provider_name, model, source, license_name, url, items, evaluator)
 
-    with gr.Blocks(title="NFL Virtual Coaching Staff", analytics_enabled=False) as demo:
-        gr.Markdown(
-            "# NFL Virtual Coaching Staff\n"
-            "Put the situation on the call sheet, hear every coordinator, and see what the head coach sends in."
+    def create_situation_callback(
+        season: int,
+        week: int,
+        offense: str,
+        defense: str,
+        offense_score: int,
+        defense_score: int,
+        quarter: int,
+        clock: str,
+        down: int,
+        distance: float,
+        field_side: str,
+        yard_line: float,
+        offense_timeouts: int,
+        defense_timeouts: int,
+        win_probability: float | None,
+        expected_points: float | None,
+        items: Sequence[dict[str, Any]],
+    ) -> tuple[Any, list[dict[str, Any]], str, str, Any, str, str, str, str]:
+        try:
+            scenario = create_custom_scenario(
+                season,
+                week,
+                offense,
+                defense,
+                offense_score,
+                defense_score,
+                quarter,
+                clock,
+                down,
+                distance,
+                field_side,
+                yard_line,
+                offense_timeouts,
+                defense_timeouts,
+                win_probability,
+                expected_points,
+            )
+        except Exception as error:
+            raise gr.Error(f"The custom situation could not be added: {error}") from error
+
+        updated_payloads = [item for item in items if item["scenario_id"] != scenario.scenario_id]
+        updated_payloads.append(scenario.model_dump(mode="json"))
+        updated_scenarios = [Scenario.model_validate(item) for item in updated_payloads]
+        state_html, analytics_html, fresh_status, fresh_transcript, fresh_decision, fresh_grade = scenario_view_with_reset(
+            scenario.scenario_id,
+            updated_payloads,
         )
+        return (
+            gr.update(
+                choices=[(item.display_name, item.scenario_id) for item in updated_scenarios],
+                value=scenario.scenario_id,
+            ),
+            updated_payloads,
+            state_html,
+            analytics_html,
+            gr.update(visible=False),
+            fresh_status,
+            fresh_transcript,
+            fresh_decision,
+            fresh_grade,
+        )
+
+    with gr.Blocks(title="NFL Virtual Coaching Staff", analytics_enabled=False) as demo:
         session_scenarios = gr.State(payloads)
         with gr.Row(equal_height=False, elem_id="game-plan-row"):
             with gr.Column(scale=2, min_width=420, elem_id="game-situation-column"):
-                scenario_selector = gr.Dropdown(
-                    choices=[(item.display_name, item.scenario_id) for item in scenario_list],
-                    value=first.scenario_id,
-                    label="Game Situation",
-                    elem_id="game-situation-selector",
+                gr.Markdown(
+                    "# NFL Virtual Coaching Staff\n"
+                    "Put the situation on the call sheet, hear every coordinator, and see what the head coach sends in.",
+                    elem_id="app-title",
                 )
+                with gr.Group(elem_id="scenario-picker-card"):
+                    gr.HTML(
+                        '<span class="scenario-picker-label">Game Situation</span>',
+                        elem_id="game-situation-heading",
+                    )
+                    with gr.Row(equal_height=True, elem_id="scenario-picker-row"):
+                        scenario_selector = gr.Dropdown(
+                            choices=[(item.display_name, item.scenario_id) for item in scenario_list],
+                            value=first.scenario_id,
+                            label="Game Situation",
+                            show_label=False,
+                            container=False,
+                            elem_id="game-situation-selector",
+                            scale=5,
+                        )
+                        open_custom_situation = gr.Button(
+                            "＋ New Situation",
+                            variant="secondary",
+                            elem_id="open-custom-situation",
+                            scale=1,
+                            min_width=155,
+                        )
                 state_card = gr.HTML(
                     initial_state,
                     elem_id="pre-snap-card",
                     elem_classes="coach-card-component",
                 )
             with gr.Column(scale=2, min_width=360, elem_id="sideline-control-column"):
+                with gr.Column(elem_id="settings-header-slot"):
+                    with gr.Accordion("Sideline Connection & Model Settings", open=False, elem_id="provider-config"):
+                        provider = gr.Dropdown(
+                            choices=model_provider_choices(),
+                            value=ModelProvider.AZURE_FOUNDRY.value,
+                            label="Coaching Staff AI Model Provider",
+                        )
+                        model_name = gr.Textbox(
+                            value=os.environ.get("FOUNDRY_MODEL"),
+                            label="Model / Deployment for the Call Sheet",
+                        )
+                        upstream_url = gr.Textbox(
+                            label="Model Card / Film Room URL (optional)",
+                            placeholder="https://huggingface.co/organization/model",
+                        )
+                        model_license = gr.Dropdown(
+                            ["Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause", "MPL-2.0"],
+                            label="Model License (Ollama Only)",
+                        )
+                        base_url = gr.Textbox(
+                            value=os.environ.get("FOUNDRY_ENDPOINT") or "http://127.0.0.1:11434",
+                            label="Sideline Connection / Provider Endpoint",
+                            info="Ollama URL or a Foundry endpoint (ending in /openai/v1/). "
+                            "Foundry uses Entra ID unless AZURE_FOUNDRY_API_KEY is set.",
+                        )
                 strategy = gr.Radio(
                     choices=[
                         ("Analytics booth only", "expected_points"),
@@ -400,41 +660,14 @@ def create_app(scenarios: Sequence[Scenario] | None = None, simulator: Determini
                     value="multi_agent",
                     label="Who's Making the Calls?",
                 )
-                with gr.Accordion("Sideline Connection & Model Settings", open=False, elem_id="provider-config"):
-                    provider = gr.Dropdown(
-                        choices=[
-                            ("Local sideline (Ollama)", ModelProvider.OLLAMA.value),
-                            ("Azure AI Foundry", ModelProvider.AZURE_FOUNDRY.value),
-                        ],
-                        value=ModelProvider.AZURE_FOUNDRY.value,
-                        label="Coaching Staff AI Model Provider",
-                    )
-                    model_name = gr.Textbox(
-                        value=os.environ.get("FOUNDRY_MODEL"),
-                        label="Model / Deployment for the Call Sheet",
-                    )
-                    upstream_url = gr.Textbox(
-                        label="Model Card / Film Room URL (optional)",
-                        placeholder="https://huggingface.co/organization/model",
-                    )
-                    model_license = gr.Dropdown(
-                        ["Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause", "MPL-2.0"],
-                        label="Model License (Ollama Only)",
-                    )
-                    base_url = gr.Textbox(
-                        value=os.environ.get("FOUNDRY_ENDPOINT") or "http://127.0.0.1:11434",
-                        label="Sideline Connection / Provider Endpoint",
-                        info="Ollama URL or a Foundry endpoint (ending in /openai/v1/). "
-                             "Foundry uses Entra ID unless AZURE_FOUNDRY_API_KEY is set.",
-                    )
-                run = gr.Button("🏈 Send in the Call! 🏈", variant="primary", elem_id="send-play-call")
-                with gr.Group(elem_id="play-call-status"):
-                    status = gr.Markdown(_live_status("Waiting for Coach to put in the call..."), elem_id="live-play-call-status")
                 baseline = gr.HTML(
                     initial_analytics,
                     elem_id="analytics-booth",
                     elem_classes=["coach-card-component", "sideline-analytics"],
                 )
+                run = gr.Button("🏈 Send in the Call! 🏈", variant="primary", elem_id="send-play-call")
+                with gr.Group(elem_id="play-call-status"):
+                    status = gr.Markdown(_live_status("Waiting for Coach to put in the call..."), elem_id="live-play-call-status")
         with gr.Row(equal_height=True, elem_id="decision-dashboard"):
             with gr.Column(scale=1, min_width=420, elem_classes="dashboard-column"):
                 final_decision = gr.HTML(
@@ -450,10 +683,115 @@ def create_app(scenarios: Sequence[Scenario] | None = None, simulator: Determini
                 )
         transcript = gr.Markdown(label="Coaches' Meeting")
 
+        with gr.Group(visible=False, elem_id="custom-situation-modal") as custom_situation_modal:
+            with gr.Column(elem_id="custom-situation-dialog"):
+                gr.Markdown(
+                    "## Put a Custom Situation on the Call Sheet\n"
+                    "Enter what the offense sees before the snap. Optional analytics can be left blank and will be estimated.",
+                    elem_id="custom-situation-intro",
+                )
+                with gr.Row():
+                    custom_season = gr.Number(value=2025, label="Season", precision=0, minimum=2000, maximum=2100)
+                    custom_week = gr.Number(value=1, label="Week", precision=0, minimum=1, maximum=22)
+                with gr.Row():
+                    custom_offense = gr.Textbox(value="BUF", label="Offense", info="2–4 character team abbreviation")
+                    custom_defense = gr.Textbox(value="KC", label="Defense", info="2–4 character team abbreviation")
+                with gr.Row():
+                    custom_offense_score = gr.Number(value=20, label="Offense Score", precision=0, minimum=0)
+                    custom_defense_score = gr.Number(value=20, label="Defense Score", precision=0, minimum=0)
+                with gr.Row():
+                    custom_quarter = gr.Dropdown([1, 2, 3, 4], value=4, label="Quarter")
+                    custom_clock = gr.Textbox(value="2:00", label="Game Clock", info="Use MM:SS, from 0:00 through 15:00")
+                with gr.Row():
+                    custom_down = gr.Dropdown([1, 2, 3, 4], value=4, label="Down")
+                    custom_distance = gr.Number(value=2, label="Yards to Go", minimum=0.1, maximum=99)
+                with gr.Row():
+                    custom_field_side = gr.Dropdown(
+                        [
+                            ("Offense's side of midfield", "offense"),
+                            ("The 50-yard line", "midfield"),
+                            ("Defense's side of midfield", "defense"),
+                        ],
+                        value="defense",
+                        label="Field Side",
+                    )
+                    custom_yard_line = gr.Number(
+                        value=35,
+                        label="Yard Line",
+                        precision=0,
+                        minimum=1,
+                        maximum=49,
+                        info="Ignored when the ball is at midfield",
+                    )
+                with gr.Row():
+                    custom_offense_timeouts = gr.Number(value=2, label="Offense Timeouts", precision=0, minimum=0, maximum=3)
+                    custom_defense_timeouts = gr.Number(value=2, label="Defense Timeouts", precision=0, minimum=0, maximum=3)
+                with gr.Accordion("Optional Analytics Overrides", open=False):
+                    with gr.Row():
+                        custom_win_probability = gr.Number(
+                            value=None,
+                            label="Offense Win Probability (%)",
+                            minimum=0,
+                            maximum=100,
+                            info="Leave blank to estimate from score, clock, and field position",
+                        )
+                        custom_expected_points = gr.Number(
+                            value=None,
+                            label="Current Expected Points",
+                            info="Leave blank to estimate from down, distance, and field position",
+                        )
+                with gr.Row(elem_id="custom-situation-actions"):
+                    cancel_custom_situation = gr.Button("Cancel", variant="secondary")
+                    save_custom_situation = gr.Button("Add to Call Sheet", variant="primary")
+
         scenario_selector.change(
-            scenario_view,
+            scenario_view_with_reset,
             inputs=[scenario_selector, session_scenarios],
-            outputs=[state_card, baseline],
+            outputs=[state_card, baseline, status, transcript, final_decision, score],
+            queue=False,
+        )
+        open_custom_situation.click(
+            lambda: gr.update(visible=True),
+            outputs=custom_situation_modal,
+            queue=False,
+        )
+        cancel_custom_situation.click(
+            lambda: gr.update(visible=False),
+            outputs=custom_situation_modal,
+            queue=False,
+        )
+        save_custom_situation.click(
+            create_situation_callback,
+            inputs=[
+                custom_season,
+                custom_week,
+                custom_offense,
+                custom_defense,
+                custom_offense_score,
+                custom_defense_score,
+                custom_quarter,
+                custom_clock,
+                custom_down,
+                custom_distance,
+                custom_field_side,
+                custom_yard_line,
+                custom_offense_timeouts,
+                custom_defense_timeouts,
+                custom_win_probability,
+                custom_expected_points,
+                session_scenarios,
+            ],
+            outputs=[
+                scenario_selector,
+                session_scenarios,
+                state_card,
+                baseline,
+                custom_situation_modal,
+                status,
+                transcript,
+                final_decision,
+                score,
+            ],
             queue=False,
         )
         run.click(

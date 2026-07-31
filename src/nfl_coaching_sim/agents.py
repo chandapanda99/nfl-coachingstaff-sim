@@ -1,87 +1,105 @@
-"""Role-based deliberation strategies and LangChain/Ollama integration."""
+"""Role-based deliberation strategies and provider-neutral LangChain integration."""
 
 from __future__ import annotations
 
 import json
-import os
 import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from enum import StrEnum
+from dataclasses import dataclass
 from typing import Any, Protocol, TypeVar
-from urllib.parse import urlparse
 
-from pydantic import BaseModel, Field, HttpUrl, ValidationError, model_validator
+from pydantic import BaseModel, ValidationError
 
+from nfl_coaching_sim.football import build_situation_brief
 from nfl_coaching_sim.models import (
     Action,
+    ActionAssessment,
     DebateTranscript,
     Decision,
     DecisionTrace,
-    PROMPT_VERSION,
     Recommendation,
     RevisedRecommendation,
     Scenario,
+    SituationBrief,
     StageEvent,
     action_vote,
 )
+from nfl_coaching_sim.providers import (
+    ModelConfiguration,
+    ModelProvider,
+    ProviderCapabilities,
+    get_provider,
+    model_provider_choices,
+    register_model_provider,
+    register_provider,
+)
 
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
-
-ROLES = {
-    "offensive_coordinator": "Assess execution, down-and-distance, likely defensive response, and the run/pass mechanics of the call.",
-    "defensive_coordinator": (
-        "Think like the opponent: identify the coverage, pressure, box count, and counter-strategy the offense is likely to face."
-    ),
-    "analytics_assistant": (
-        "Use the provided expected-points evidence, win-probability context, field position, and uncertainty. Do not invent statistics."
-    ),
-    "clock_management_specialist": "Prioritize possession value, remaining clock, timeouts, clock runoff, and the score state.",
-    "critical_reviewer": (
-        "Stress-test assumptions, surface tail risks, and prefer the most defensible choice after challenging the other perspectives."
-    ),
-}
-
-APPROVED_LICENSES = {
-    "Apache-2.0",
-    "MIT",
-    "BSD-2-Clause",
-    "BSD-3-Clause",
-    "MPL-2.0",
+_EVIDENCE_ID_ALIASES = {
+    "CLOCK_CONTEXT": "STATE_CLOCK_CONTEXT",
 }
 
 
-class ModelProvider(StrEnum):
-    OLLAMA = "ollama"
-    AZURE_FOUNDRY = "azure_foundry"
+@dataclass(frozen=True)
+class RoleProfile:
+    mission: str
+    checklist: tuple[str, ...]
+    guardrail: str
 
 
-class ModelConfiguration(BaseModel):
-    provider: ModelProvider = ModelProvider.OLLAMA
-    model: str = Field(min_length=1)
-    base_url: str = "http://127.0.0.1:11434"
-    upstream_url: HttpUrl | None = None
-    license: str
-    temperature: float = Field(default=0.0, ge=0, le=2)
-    seed: int = 2026
-
-    @model_validator(mode="after")
-    def validate_open_model(self) -> ModelConfiguration:
-        if self.license not in APPROVED_LICENSES:
-            raise ValueError(f"model license must be one of {sorted(APPROVED_LICENSES)}")
-        endpoint = urlparse(self.base_url)
-        if not endpoint.scheme or not endpoint.netloc:
-            raise ValueError("base_url must be an absolute HTTP(S) endpoint")
-        if self.provider == ModelProvider.AZURE_FOUNDRY:
-            if endpoint.scheme != "https":
-                raise ValueError("Azure Foundry endpoints must use HTTPS")
-            if not endpoint.path.rstrip("/").endswith("/openai/v1"):
-                raise ValueError("Azure Foundry base_url must end with /openai/v1/")
-        return self
-
-    @property
-    def model_id(self) -> str:
-        return f"{self.provider.value}:{self.model}"
+ROLE_PROFILES = {
+    "offensive_coordinator": RoleProfile(
+        mission="Build the most executable call plan for the offense in this down, distance, field position, score, and clock state.",
+        checklist=(
+            "Compare the execution burden and required yardage for every legal call.",
+            "Account for protection, sack, turnover, negative-play, and incompletion risk without inventing personnel details.",
+            "Explain how success and failure affect the next down or the remaining possession.",
+            "Treat fronts, box counts, coverage shells, and player matchups as unknown unless supplied.",
+        ),
+        guardrail="Discuss unavailable defensive looks only as explicit if/then pre-snap checks, never as observed facts.",
+    ),
+    "defensive_coordinator": RoleProfile(
+        mission="Think like the opposing defensive play caller and identify which offensive choice best attacks the defense's situational objective.",
+        checklist=(
+            "State what the defense must prevent given the sticks, score, field position, and clock.",
+            "Compare how every legal call can be defeated by pressure, coverage, or numbers at the point of attack.",
+            "Use conditional counters for light boxes, loaded boxes, pressure looks, and two-high shells.",
+            "Identify which offensive call gives the defense the easiest clock or field-position outcome.",
+        ),
+        guardrail="The actual front, coverage, pressure, box count, personnel, and matchup quality are unavailable; never claim to have observed them.",
+    ),
+    "analytics_assistant": RoleProfile(
+        mission="Translate the released evidence into a calibrated comparison of every legal action while keeping the hidden evaluator private.",
+        checklist=(
+            "Compare the simple EPA baseline for every legal call, not only the leader.",
+            "Separate expected-points value from win-probability, clock, and possession effects.",
+            "Call out small numerical differences that should not be treated as decisive.",
+            "Use only supplied evidence identifiers and never manufacture rates, probabilities, or sample sizes.",
+        ),
+        guardrail="The simple EP table is evidence, not an oracle; do not claim access to richer simulator estimates.",
+    ),
+    "clock_management_specialist": RoleProfile(
+        mission="Protect the team's possession and clock objectives while accounting for both teams' timeout leverage.",
+        checklist=(
+            "Start with whether the offense should preserve, drain, or balance the clock.",
+            "Compare likely clock-stop and runoff consequences for every legal action.",
+            "Use the two-minute-warning and first-down endgame evidence explicitly.",
+            "Explain how success and failure change the number and quality of remaining possessions.",
+        ),
+        guardrail="Do not assert an exact runoff or future possession count unless the supplied evidence states it.",
+    ),
+    "critical_reviewer": RoleProfile(
+        mission="Audit the staff's football logic and choose the call that survives the strongest factual and situational objections.",
+        checklist=(
+            "Check that every legal action received a fair comparison.",
+            "Reject unsupported claims about formations, personnel, weather, tendencies, coverage, or player ability.",
+            "Check score arithmetic, field-goal distance, timeout usage, and clock logic against the evidence packet.",
+            "Identify the closest alternative and the concrete pre-snap condition that would justify switching.",
+        ),
+        guardrail="Prioritize factual consistency and decision robustness over inventing a new tactical narrative.",
+    ),
+}
 
 
 class StructuredModel(Protocol):
@@ -90,69 +108,29 @@ class StructuredModel(Protocol):
     def invoke(self, schema: type[SchemaT], system_prompt: str, user_prompt: str) -> SchemaT: ...
 
 
-class LangChainOllamaModel:
-    """Small adapter that keeps LangChain out of the research core."""
+class LangChainStructuredModel:
+    """Provider-neutral structured-output adapter used by every coaching strategy."""
 
-    def __init__(self, configuration: ModelConfiguration) -> None:
-        from langchain_ollama import ChatOllama
-
+    def __init__(
+        self,
+        configuration: ModelConfiguration,
+        chat_model: Any,
+        authentication: str,
+        capabilities: ProviderCapabilities,
+        effective_generation_parameters: dict[str, Any],
+    ) -> None:
         self.configuration = configuration
         self.model_id = configuration.model_id
-        self._model = ChatOllama(
-            model=configuration.model,
-            base_url=configuration.base_url,
-            temperature=configuration.temperature,
-            seed=configuration.seed,
-            validate_model_on_init=False,
-        )
+        self.authentication = authentication
+        self.capabilities = capabilities
+        self.effective_generation_parameters = effective_generation_parameters
+        self._model = chat_model
 
     def invoke(self, schema: type[SchemaT], system_prompt: str, user_prompt: str) -> SchemaT:
         return _invoke_with_repair(self._model, schema, system_prompt, user_prompt)
 
 
-class AzureFoundryStructuredModel:
-    """LangChain adapter for Foundry model deployments using secretless auth."""
-
-    def __init__(self, configuration: ModelConfiguration) -> None:
-        try:
-            from langchain_openai import ChatOpenAI
-        except ImportError as error:
-            raise RuntimeError("Azure Foundry support requires the 'azure' optional dependency: pip install -e '.[azure]'") from error
-
-        api_key = os.environ.get("AZURE_FOUNDRY_API_KEY")
-        if api_key:
-            credential: Any = api_key
-            self.authentication = "api_key_environment"
-        else:
-            try:
-                from azure.identity import DefaultAzureCredential, get_bearer_token_provider
-            except ImportError as error:
-                raise RuntimeError(
-                    "Microsoft Entra ID authentication requires azure-identity; install the 'azure' optional dependency"
-                ) from error
-            credential = get_bearer_token_provider(DefaultAzureCredential(), "https://cognitiveservices.azure.com/.default")
-            self.authentication = "default_azure_credential"
-
-        self.configuration = configuration
-        self.model_id = configuration.model_id
-        self._model = ChatOpenAI(
-            model=configuration.model,
-            base_url=configuration.base_url,
-            api_key=credential,
-            temperature=configuration.temperature,
-            seed=configuration.seed,
-        )
-
-    def invoke(self, schema: type[SchemaT], system_prompt: str, user_prompt: str) -> SchemaT:
-        return _invoke_with_repair(self._model, schema, system_prompt, user_prompt)
-
-
-def _invoke_with_repair(
-        model: Any,
-        schema: type[SchemaT],
-        system_prompt: str,
-        user_prompt: str,
-) -> SchemaT:
+def _invoke_with_repair(model: Any, schema: type[SchemaT], system_prompt: str, user_prompt: str) -> SchemaT:
     """Apply the same schema-repair policy to every LangChain provider."""
 
     last_error: Exception | None = None
@@ -189,32 +167,98 @@ def _is_repairable_output_error(error: Exception) -> bool:
 
 def _scenario_prompt(scenario: Scenario) -> str:
     state = scenario.state
+    brief = build_situation_brief(scenario)
     baseline = {action.value: round(value, 4) for action, value in scenario.ep_baseline.items()}
     return json.dumps(
         {
             "scenario_id": scenario.scenario_id,
-            "clock": state.clock_display,
-            "game_seconds_remaining": state.game_seconds_remaining,
-            "possession": state.possession_team,
-            "defense": state.defensive_team,
-            "score": {
-                state.possession_team: state.possession_score,
-                state.defensive_team: state.defensive_score,
+            "game_state": {
+                "clock": state.clock_display,
+                "game_seconds_remaining": state.game_seconds_remaining,
+                "possession": state.possession_team,
+                "defense": state.defensive_team,
+                "score": {
+                    state.possession_team: state.possession_score,
+                    state.defensive_team: state.defensive_score,
+                },
+                "down": state.down,
+                "yards_to_go": state.yards_to_go,
+                "yardline_100": state.yardline_100,
+                "timeouts": {
+                    state.possession_team: state.possession_timeouts,
+                    state.defensive_team: state.defensive_timeouts,
+                },
+                "current_win_probability": state.win_probability,
+                "current_expected_points": state.expected_points,
             },
-            "down": state.down,
-            "yards_to_go": state.yards_to_go,
-            "yardline_100": state.yardline_100,
-            "timeouts": {
-                state.possession_team: state.possession_timeouts,
-                state.defensive_team: state.defensive_timeouts,
-            },
-            "current_win_probability": state.win_probability,
-            "current_expected_points": state.expected_points,
             "legal_actions": [action.value for action in state.legal_actions],
             "simple_ep_baseline": baseline,
+            "situation_brief": brief.model_dump(mode="json", exclude={"evidence"}),
+            "allowed_evidence_ids": sorted(brief.evidence_ids),
+            "evidence_packet": [item.model_dump(mode="json") for item in brief.evidence],
         },
         indent=2,
     )
+
+
+def _role_system_prompt(role: str, phase: str) -> str:
+    profile = ROLE_PROFILES[role]
+    checklist = "\n".join(f"{index}. {item}" for index, item in enumerate(profile.checklist, start=1))
+    phase_instruction = (
+        "Make an independent recommendation before seeing another coach's preference."
+        if phase == "opening"
+        else "Audit the anonymized opening calls, rebut the weakest material claim, and then keep or revise your recommendation."
+    )
+    return (
+        f"You are the NFL staff's {role.replace('_', ' ')}. {profile.mission}\n\n"
+        f"COACHING CHECKLIST:\n{checklist}\n\n"
+        f"GUARDRAIL: {profile.guardrail}\n\n"
+        f"{phase_instruction} Assess every legal action exactly once in the supplied order. "
+        "For each action, provide advantages, risks, clock effect, a 0-to-1 support score, and only evidence IDs from allowed_evidence_ids. "
+        "Copy every evidence ID verbatim as a standalone JSON string; never append punctuation, explanation, translation, or other text to an ID. "
+        "Choose one legal call, name a different legal action as the closest alternative, and state a concrete condition that would switch the call. "
+        "Separate supplied facts from conditional football judgment. If going for it, specify run or pass."
+    )
+
+
+def _validate_recommendation(recommendation: Recommendation, scenario: Scenario, brief: SituationBrief) -> Recommendation:
+    normalized_assessments = [
+        assessment.model_copy(
+            update={"evidence_ids": [_EVIDENCE_ID_ALIASES.get(evidence_id, evidence_id) for evidence_id in assessment.evidence_ids]}
+        )
+        for assessment in recommendation.action_assessments
+    ]
+    recommendation = recommendation.model_copy(update={"action_assessments": normalized_assessments})
+    recommendation.decision.validate_for(scenario.state)
+    legal_order = scenario.state.legal_actions
+    assessed_order = tuple(assessment.action for assessment in recommendation.action_assessments)
+    if assessed_order != legal_order:
+        raise ValueError(
+            "action assessments must cover every legal action in supplied order; "
+            f"expected={[action.value for action in legal_order]}, actual={[action.value for action in assessed_order]}"
+        )
+    if recommendation.closest_alternative not in set(legal_order):
+        raise ValueError("closest alternative must be legal for the supplied game state")
+    cited = {evidence_id for assessment in recommendation.action_assessments for evidence_id in assessment.evidence_ids}
+    unknown = cited - brief.evidence_ids
+    if unknown:
+        raise ValueError(f"recommendation cited unknown evidence IDs: {sorted(unknown)}")
+    return recommendation
+
+
+def _fallback_assessments(scenario: Scenario) -> list[ActionAssessment]:
+    best_value = max(scenario.ep_baseline[action] for action in scenario.state.legal_actions)
+    return [
+        ActionAssessment(
+            action=action,
+            advantages=[f"The released EP baseline estimates {scenario.ep_baseline[action]:+.3f} EPA."],
+            risks=["No role-specific model assessment reached the sideline."],
+            clock_effect="Use the deterministic situation brief for clock context; no additional model judgment is available.",
+            evidence_ids=[f"EP_BASELINE_{action.value.upper()}", "CLOCK_PRIORITY"],
+            support_score=1.0 if scenario.ep_baseline[action] == best_value else 0.0,
+        )
+        for action in scenario.state.legal_actions
+    ]
 
 
 def _ep_decision(scenario: Scenario, rationale: str) -> Decision:
@@ -227,15 +271,18 @@ def _ep_decision(scenario: Scenario, rationale: str) -> Decision:
 
 
 def _fallback_recommendation(role: str, scenario: Scenario, error: Exception) -> Recommendation:
+    decision = _ep_decision(scenario, "The coordinator's headset went down, so the analytics booth sent in the highest-EPA call")
+    alternatives = [action for action in scenario.state.legal_actions if action != decision.action]
+    closest_alternative = max(alternatives, key=lambda action: (scenario.ep_baseline[action], action.value))
     return Recommendation(
         role=role,
-        decision=_ep_decision(
-            scenario,
-            "The coordinator's headset went down, so the analytics booth sent in the highest-EPA call.",
-        ),
+        decision=decision,
         confidence=0,
-        argument="No clean recommendation came through from this position group; defer to the analytics card.",
+        argument="No clean recommendation came through from this position group; defer to the analytics card",
         concerns=[f"Headset communication: {str(error)[:280]}"],
+        action_assessments=_fallback_assessments(scenario),
+        closest_alternative=closest_alternative,
+        switch_condition="Switch only if verified pre-snap information materially changes the released evidence comparison",
     )
 
 
@@ -269,9 +316,10 @@ class SingleAgentStrategy:
             decision = self.model.invoke(
                 Decision,
                 (
-                    "You are the NFL head coach. Make one legal decision using only the "
-                    "supplied game state and simple EP evidence. Balance win probability, "
-                    "clock, execution risk, and score. Never invent unavailable facts."
+                    "You are the NFL head coach. Compare every legal action using the supplied game state, deterministic situation brief, "
+                    "and evidence packet before making one legal decision. Balance win probability, expected points, clock, possession value, "
+                    "execution risk, and score. Treat formations, personnel, matchups, weather, fronts, coverages, and tendencies as unknown. "
+                    "Never invent unavailable facts or claim access to the hidden evaluator."
                 ),
                 _scenario_prompt(scenario),
             )
@@ -298,64 +346,46 @@ class MultiAgentStrategy:
     name = "multi_agent"
 
     def __init__(self, model: StructuredModel, max_parallel_calls: int = 5) -> None:
-        if not 1 <= max_parallel_calls <= len(ROLES):
-            raise ValueError(f"max_parallel_calls must be between 1 and {len(ROLES)}")
+        if not 1 <= max_parallel_calls <= len(ROLE_PROFILES):
+            raise ValueError(f"max_parallel_calls must be between 1 and {len(ROLE_PROFILES)}")
         self.model = model
         self.max_parallel_calls = max_parallel_calls
 
-    def _initial(self, role: str, focus: str, scenario: Scenario) -> Recommendation:
+    def _initial(self, role: str, scenario: Scenario) -> Recommendation:
+        brief = build_situation_brief(scenario)
         result = self.model.invoke(
             Recommendation,
-            (
-                f"You are the NFL staff's {role.replace('_', ' ')}. {focus} "
-                "Recommend exactly one legal action. If going for it, specify run or pass. Use only the provided information."
-            ),
+            _role_system_prompt(role, "opening"),
             _scenario_prompt(scenario),
         )
-        result.decision.validate_for(scenario.state)
-        return result.model_copy(update={"role": role})
+        result = result.model_copy(update={"role": role})
+        return _validate_recommendation(result, scenario, brief)
 
-    def _revise(
-            self,
-            role: str,
-            focus: str,
-            scenario: Scenario,
-            initial: list[Recommendation],
-    ) -> RevisedRecommendation:
+    def _revise(self, role: str, scenario: Scenario, initial: list[Recommendation]) -> RevisedRecommendation:
         arguments = [
             {
                 "speaker": f"staff_member_{index + 1}",
-                "decision": rec.decision.model_dump(mode="json"),
-                "confidence": rec.confidence,
-                "argument": rec.argument,
-                "concerns": rec.concerns,
+                **rec.model_dump(mode="json", exclude={"role"}),
             }
             for index, rec in enumerate(initial)
         ]
         result = self.model.invoke(
             RevisedRecommendation,
-            (
-                f"You are the NFL staff's {role.replace('_', ' ')}. {focus} "
-                "Review the anonymized staff recommendations, rebut their weakest claims, "
-                "then keep or revise your legal decision."
-            ),
+            _role_system_prompt(role, "revision"),
             _scenario_prompt(scenario) + "\n\nANONYMIZED INITIAL RECOMMENDATIONS:\n" + json.dumps(arguments, indent=2),
         )
-        result.decision.validate_for(scenario.state)
-        return result.model_copy(update={"role": role})
+        result = result.model_copy(update={"role": role})
+        return RevisedRecommendation.model_validate(_validate_recommendation(result, scenario, build_situation_brief(scenario)).model_dump())
 
     def iter_decide(self, scenario: Scenario) -> Iterator[StageEvent]:
         started = time.perf_counter()
         failures: list[str] = []
-        role_order = tuple(ROLES)
+        role_order = tuple(ROLE_PROFILES)
         calls = len(role_order)
         initial_by_role: dict[str, Recommendation] = {}
         initial_errors: dict[str, Exception] = {}
-        with ThreadPoolExecutor(
-                max_workers=self.max_parallel_calls,
-                thread_name_prefix="opening-staff-call",
-        ) as executor:
-            future_roles = {executor.submit(self._initial, role, ROLES[role], scenario): role for role in role_order}
+        with ThreadPoolExecutor(max_workers=self.max_parallel_calls, thread_name_prefix="opening-staff-call") as executor:
+            future_roles = {executor.submit(self._initial, role, scenario): role for role in role_order}
             for future in as_completed(future_roles):
                 role = future_roles[future]
                 try:
@@ -380,11 +410,8 @@ class MultiAgentStrategy:
         calls += len(role_order)
         revised_by_role: dict[str, RevisedRecommendation] = {}
         revision_errors: dict[str, Exception] = {}
-        with ThreadPoolExecutor(
-                max_workers=self.max_parallel_calls,
-                thread_name_prefix="challenge-round-call",
-        ) as executor:
-            future_roles = {executor.submit(self._revise, role, ROLES[role], scenario, initial): role for role in role_order}
+        with ThreadPoolExecutor(max_workers=self.max_parallel_calls, thread_name_prefix="challenge-round-call") as executor:
+            future_roles = {executor.submit(self._revise, role, scenario, initial): role for role in role_order}
             for future in as_completed(future_roles):
                 role = future_roles[future]
                 try:
@@ -394,14 +421,12 @@ class MultiAgentStrategy:
                     fallback = _fallback_recommendation(role, scenario, error)
                     recommendation = RevisedRecommendation(
                         **fallback.model_dump(),
-                        rebuttal="No challenge-round adjustment came through on the headset.",
+                        rebuttal="No adjustments came through on the headset.",
                     )
                 revised_by_role[role] = recommendation
                 yield StageEvent(
                     stage=f"revision:{role}",
-                    message=(
-                        f"{role.replace('_', ' ').title()} finishes the challenge round " f"with {recommendation.decision.call_label}."
-                    ),
+                    message=f"{role.replace('_', ' ').title()} finishes the discussion " f"with {recommendation.decision.call_label}!",
                 )
         for role in role_order:
             if role in revision_errors:
@@ -420,7 +445,8 @@ class MultiAgentStrategy:
                 (
                     "You are the head coach. Synthesize the revised staff debate and choose "
                     "one legal action. Resolve disagreement explicitly, prioritize winning "
-                    "the game over raw expected points, and use no outside facts."
+                    "the game over raw expected points, verify claims against the evidence packet, "
+                    "and explain why the closest competing action lost. Use no outside facts or hidden evaluator values."
                 ),
                 _scenario_prompt(scenario)
                 + "\n\nREVISED STAFF DEBATE:\n"
@@ -466,8 +492,12 @@ class MultiAgentStrategy:
 
 
 def make_model(configuration: ModelConfiguration) -> StructuredModel:
-    if configuration.provider == ModelProvider.OLLAMA:
-        return LangChainOllamaModel(configuration)
-    if configuration.provider == ModelProvider.AZURE_FOUNDRY:
-        return AzureFoundryStructuredModel(configuration)
-    raise ValueError(f"unsupported model provider: {configuration.provider}")
+    adapter = get_provider(configuration.provider)
+    provider_model = adapter.build(configuration)
+    return LangChainStructuredModel(
+        configuration,
+        provider_model.chat_model,
+        provider_model.authentication,
+        adapter.capabilities,
+        provider_model.effective_generation_parameters,
+    )
