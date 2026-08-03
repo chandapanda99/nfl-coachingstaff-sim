@@ -97,12 +97,18 @@ def _launch_app(
     simulator_path: Path | None = None,
     host: str = "127.0.0.1",
     port: int = 7860,
+    custom_scenarios_path: Path | None = None,
 ) -> None:
     from nfl_coaching_sim.app import create_app, create_app_theme, load_app_css
+    from nfl_coaching_sim.scenario_library import default_custom_scenarios_path
 
     typer.echo("DRAWING UP THE VIRTUAL SIDELINE & LOADING THE CALL SHEET...")
     scenarios, evaluator = _load_startup_assets(scenarios_path, simulator_path)
-    demo = create_app(scenarios, evaluator)
+    demo = create_app(
+        scenarios,
+        evaluator,
+        custom_scenarios_path=custom_scenarios_path or default_custom_scenarios_path(),
+    )
     # typer.echo(f"Virtual Sideline opening at: http://{host}:{port}")
     demo.launch(
         server_name=host,
@@ -274,10 +280,11 @@ def app_serve(
     simulator_path: Annotated[Path | None, typer.Option()] = None,
     host: Annotated[str, typer.Option()] = "127.0.0.1",
     port: Annotated[int, typer.Option()] = 7860,
+    custom_scenarios_path: Annotated[Path | None, typer.Option("--custom-scenarios")] = None,
 ) -> None:
     """Launch the interactive Gradio application."""
 
-    _launch_app(scenarios_path, simulator_path, host, port)
+    _launch_app(scenarios_path, simulator_path, host, port, custom_scenarios_path)
 
 
 @app.command("serve")
@@ -286,10 +293,11 @@ def serve(
     simulator_path: Annotated[Path | None, typer.Option()] = None,
     host: Annotated[str, typer.Option()] = "127.0.0.1",
     port: Annotated[int, typer.Option()] = 7860,
+    custom_scenarios_path: Annotated[Path | None, typer.Option("--custom-scenarios")] = None,
 ) -> None:
     """Launch Gradio with optional custom assets and network settings."""
 
-    _launch_app(scenarios_path, simulator_path, host, port)
+    _launch_app(scenarios_path, simulator_path, host, port, custom_scenarios_path)
 
 
 if __name__ == "__main__":

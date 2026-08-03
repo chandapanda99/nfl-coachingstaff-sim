@@ -6,7 +6,7 @@ from typing import Literal
 from nfl_coaching_sim.models import EvidenceItem, Scenario, SituationBrief
 
 
-def _distance_bucket(yards_to_go: float) -> Literal["short", "manageable", "medium", "long"] | str:
+def _distance_bucket(yards_to_go: float) -> Literal["short", "manageable", "medium", "long"]:
     if yards_to_go <= 1:
         return "short"
     if yards_to_go <= 3:
@@ -41,10 +41,10 @@ def _field_goal_effect(score_differential: int) -> str:
     if post_kick == 0:
         return "A made field goal would tie the game."
     if score_differential <= 0 < post_kick:
-        return f"A made field goal would produce a {post_kick}-point lead."
+        return f"A made field goal would give a {post_kick}-point lead."
     if post_kick < 0:
         return f"A made field goal would still leave the offense trailing by {abs(post_kick)}."
-    return f"A made field goal would produce a {post_kick}-point lead."
+    return f"A made field goal would give a {post_kick}-point lead."
 
 
 def build_situation_brief(scenario: Scenario) -> SituationBrief:

@@ -10,7 +10,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 SCENARIO_SCHEMA_VERSION = "1.0"
-PROMPT_VERSION = "2.0"
+PROMPT_VERSION = "3.0"
 SIMULATOR_VERSION = "1.0"
 
 
@@ -207,6 +207,7 @@ class Scenario(BaseModel):
     ep_baseline: dict[Action, float]
     source: str = "nflverse"
     source_license: str = "CC-BY-4.0"
+    name: str | None = Field(default=None, min_length=1, max_length=80)
 
     @model_validator(mode="after")
     def validate_baseline(self) -> Scenario:
@@ -218,11 +219,10 @@ class Scenario(BaseModel):
     @property
     def display_name(self) -> str:
         state = self.state
-        return (
-            f"{state.season} Week {state.week} | "
-            f"{state.possession_team} {state.possession_score} vs {state.defensive_team} {state.defensive_score} | "
-            f"{state.clock_display} | {state.down_and_distance} at {state.field_position}"
-        )
+        game = f"{state.possession_team} {state.possession_score}–{state.defensive_score} {state.defensive_team}"
+        field_position = state.field_position.removeprefix("the ")
+        situation = f"{state.clock_display} · {game} · {state.down_and_distance} · {field_position}"
+        return f"{self.name} · {situation}" if self.name else situation
 
 
 class DebateTranscript(BaseModel):
@@ -274,6 +274,10 @@ class BenchmarkResult(BaseModel):
 class StageEvent(BaseModel):
     stage: str
     message: str
+    role: str | None = None
+    recommendation: Recommendation | None = None
+    revision: RevisedRecommendation | None = None
+    failure: str | None = None
     trace: DecisionTrace | None = None
 
 

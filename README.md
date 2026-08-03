@@ -9,7 +9,8 @@ application does not select or download a model for you.
 
 ## What is included
 
-- A Gradio scenario explorer with stage-by-stage deliberation updates.
+- A Gradio scenario explorer with a completed-response live headset transcript: each validated coach message appears as soon as that coach finishes.
+- A built-in call sheet plus a persistent **My Situations** library for named, user-created pre-snap situations.
 - A deterministic situation brief covering score, clock, field-goal distance, field zone, timeout leverage, and endgame first-down value.
 - Evidence-linked action scorecards requiring every coach to compare every legal call, name the closest alternative, and define a switch condition.
 - A Typer CLI for nflverse sync, scenario construction, evaluator training, paired benchmarks, and HTML reports.
@@ -43,6 +44,9 @@ otherwise uses the deterministic offline evaluator.
 
 Use `nfl-coach serve --help` when you need a custom host, port, scenario pack, or simulator path. `python -m nfl_coaching_sim` is an equivalent startup command.
 
+Custom situations saved in the app are loaded on later startups. By default they live in the current user's application-data directory as `custom-scenarios.jsonl`. Set
+`NFL_COACH_CUSTOM_SCENARIOS` or pass `--custom-scenarios PATH` to choose a different location.
+
 The expected-points strategy works immediately. For an Ollama strategy, start an Ollama server and enter all of the following in the UI:
 
 - The installed Ollama model tag.
@@ -64,8 +68,9 @@ The model source URL is optional in Gradio because it is not used for inference.
 
 Authentication uses `DefaultAzureCredential`, so local Azure CLI credentials, managed identity, workload identity, and environment-based service principals work without
 putting secrets in the app. If key authentication is unavoidable, set
-`AZURE_FOUNDRY_API_KEY` in the process environment. Keys are never accepted through Gradio or CLI options and are not written to benchmark artifacts.
-Foundry model calls use LangChain's Responses API mode (`use_responses_api=True`). Each provider adapter allowlists its supported generation parameters: Foundry Responses receives `temperature`, while Ollama receives `temperature` and `seed`.
+`AZURE_FOUNDRY_API_KEY` in the process environment. Keys are never accepted through Gradio or CLI options and are not written to benchmark artifacts. Foundry model calls use
+LangChain's Responses API mode (`use_responses_api=True`). Each provider adapter allowlists its supported generation parameters: Foundry Responses receives `temperature`,
+while Ollama receives `temperature` and `seed`.
 
 Example:
 
@@ -84,20 +89,20 @@ the serving provider from the model license.
 
 ### LangChain provider boundary
 
-All coaching strategies depend on one provider-neutral structured-model interface. Provider adapters under `nfl_coaching_sim.providers` own endpoint validation, authentication,
-supported parameters, API mode, and lazy LangChain model construction. Structured-output repair, prompts, orchestration, and fallback behavior remain shared. Registered
-providers automatically appear in Gradio, and the CLI accepts any registered provider ID.
+All coaching strategies depend on one provider-neutral structured-model interface. Provider adapters under `nfl_coaching_sim.providers` own endpoint validation,
+authentication, supported parameters, API mode, and lazy LangChain model construction. Structured-output repair, prompts, orchestration, and fallback behavior remain shared.
+Registered providers automatically appear in Gradio, and the CLI accepts any registered provider ID.
 
 Add a LangChain-compatible provider by implementing the `ProviderAdapter` protocol and registering one adapter during startup:
 
 ```python
 from nfl_coaching_sim.providers import register_provider
 
-register_provider(MyProviderAdapter())
+# register_provider(MyProviderAdapter())
 ```
 
-The adapter declares `ProviderCapabilities`, validates its own configuration, and returns a `ProviderModel`. A function-based `register_model_provider(...)` compatibility helper
-remains available for simple integrations. No coaching strategy, prompt, benchmark, or UI callback needs provider-specific logic.
+The adapter declares `ProviderCapabilities`, validates its own configuration, and returns a `ProviderModel`. A function-based `register_model_provider(...)` compatibility
+helper remains available for simple integrations. No coaching strategy, prompt, benchmark, or UI callback needs provider-specific logic.
 
 ## Rebuild the research artifacts
 
@@ -138,8 +143,9 @@ Training uses the 2016–2023 seasons. Released evaluation scenarios use 2024–
 The primary score is expected win-probability added. EPA, oracle regret, best-action rate, failures, fallbacks, latency, and model-call counts are secondary outputs. Neither
 agents nor the EP policy see the richer evaluator's counterfactual scores.
 
-Prompt version 2 builds an outcome-free situation brief from each released scenario. Specialist coaches receive the same evidence packet as the single-agent head coach, but
-use role-specific checklists. Multi-agent recommendations must assess every legal action and may cite only evidence included in that packet.
+Prompt version 3 builds an outcome-free situation brief from each released scenario. Specialist coaches receive the same evidence packet as the single-agent head coach, but
+use role-specific checklists and headset voices. Multi-agent recommendations must assess every legal action and may cite only evidence included in that packet. Evidence IDs
+remain private structured metadata for validation and benchmarking; the visible transcript references the underlying football facts in natural coaching language.
 
 This is an observational benchmark. The action-value regressors learn from choices NFL coaches actually made, so their counterfactual scores are not causal estimates and
 retain selection bias. Results should be described as performance against this released simulator—not proof that an unobserved call would have produced the modeled outcome.

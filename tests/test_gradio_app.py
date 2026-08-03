@@ -7,6 +7,8 @@ from nfl_coaching_sim.app import (
     create_app,
     create_app_theme,
     create_custom_scenario,
+    custom_scenario_form_values,
+    scenarios_for_library,
     load_app_css,
     run_strategy_events,
     scenario_view,
@@ -14,16 +16,19 @@ from nfl_coaching_sim.app import (
 )
 from nfl_coaching_sim.data import demo_scenarios
 from nfl_coaching_sim.simulator import DeterministicSimulator
+from nfl_coaching_sim.scenario_library import delete_custom_scenario, load_custom_scenarios, save_custom_scenario
 
 
 def test_gradio_app_builds_and_critical_callbacks_run_without_model_server(
     monkeypatch,
+    tmp_path,
 ) -> None:
     scenarios = demo_scenarios()
     payloads = [item.model_dump(mode="json") for item in scenarios]
     state, baseline = scenario_view(scenarios[0].scenario_id, payloads)
     reset_view = scenario_view_with_reset(scenarios[1].scenario_id, payloads)
     custom = create_custom_scenario(
+        "Must-Have Fourth Down",
         2025,
         18,
         "chi",
@@ -39,6 +44,9 @@ def test_gradio_app_builds_and_critical_callbacks_run_without_model_server(
         1,
         2,
     )
+    custom_path = tmp_path / "custom-scenarios.jsonl"
+    save_custom_scenario(custom_path, custom)
+    reloaded_custom = load_custom_scenarios(custom_path)
     custom_state, custom_baseline = scenario_view(custom.scenario_id, [*payloads, custom.model_dump(mode="json")])
     events = list(
         run_strategy_events(
@@ -53,7 +61,30 @@ def test_gradio_app_builds_and_critical_callbacks_run_without_model_server(
             DeterministicSimulator(),
         )
     )
-    app = create_app(scenarios[:2], DeterministicSimulator())
+    app = create_app(scenarios[:2], DeterministicSimulator(), custom_scenarios_path=custom_path)
+    edited_custom = create_custom_scenario(
+        "Edited Fourth Down",
+        2025,
+        18,
+        "chi",
+        "gb",
+        24,
+        27,
+        4,
+        "0:48",
+        4,
+        2,
+        "defense",
+        36,
+        1,
+        2,
+        17.5,
+        1.25,
+    )
+    save_custom_scenario(custom_path, edited_custom, replacing_scenario_id=custom.scenario_id)
+    edited_values = custom_scenario_form_values(edited_custom)
+    edited_library = load_custom_scenarios(custom_path)
+    remaining_library = delete_custom_scenario(custom_path, edited_custom.scenario_id)
     theme = create_app_theme()
     stylesheet = load_app_css()
     launches = []
@@ -66,7 +97,7 @@ def test_gradio_app_builds_and_critical_callbacks_run_without_model_server(
     assert escape(scenarios[0].state.down_and_distance) in state
     assert "Expected Value by Call" in baseline
     assert "New situation is on the call sheet" in reset_view[2]
-    assert reset_view[3] == ""
+    assert "Completed coaching responses will appear here" in reset_view[3]
     assert "Waiting on the sideline" in reset_view[4]
     assert "No grade on the board yet" in reset_view[5]
     assert "Top option" in baseline
@@ -75,6 +106,16 @@ def test_gradio_app_builds_and_critical_callbacks_run_without_model_server(
     assert "Q4 1:12" in custom_state
     assert "Keep the offense on the field" in custom_state
     assert "Expected Value by Call" in custom_baseline
+    assert reloaded_custom == [custom]
+    assert edited_library == [edited_custom]
+    assert edited_values[0] == "Edited Fourth Down"
+    assert edited_values[8] == "0:48"
+    assert edited_values[11:13] == ("defense", 36.0)
+    assert edited_values[-2:] == (17.5, 1.25)
+    assert remaining_library == []
+    assert load_custom_scenarios(custom_path) == []
+    assert scenarios_for_library("custom", [*payloads, custom.model_dump(mode="json")]) == [custom]
+    assert custom.name in custom.display_name
     assert "Head Coach's Call" in events[-1][2]
     assert "Call Sent to the Huddle" in events[-1][2]
     assert "Win Probability Added" in events[-1][3]
@@ -88,15 +129,24 @@ def test_gradio_app_builds_and_critical_callbacks_run_without_model_server(
     assert "send-play-call" in str(app.config)
     assert "game-plan-row" in str(app.config)
     assert "game-situation-selector" in str(app.config)
+    assert "scenario-library-selector" in str(app.config)
+    assert "My Situations" in str(app.config)
     assert "open-custom-situation" in str(app.config)
     assert "custom-situation-modal" in str(app.config)
+    assert "custom-situation-form-body" in str(app.config)
+    assert "custom-analytics-overrides" in str(app.config)
     assert "New Situation" in str(app.config)
-    assert "Add to Call Sheet" in str(app.config)
+    assert "Edit Selected" in str(app.config)
+    assert "Delete Selected" in str(app.config)
+    assert "Delete Permanently" in str(app.config)
+    assert "delete-situation-modal" in str(app.config)
+    assert "Save to My Situations" in str(app.config)
     assert "decision-dashboard" in str(app.config)
     assert "analytics-booth" in str(app.config)
     assert "sideline-analytics" in str(app.config)
     assert "Sideline Connection & Model Settings" in str(app.config)
     assert "live-play-call-status" in str(app.config)
+    assert "coaches-meeting-transcript" in str(app.config)
     assert scenarios[0].display_name in str(app.config)
     assert scenarios[0].scenario_id not in scenarios[0].display_name
     assert result.exit_code == 0

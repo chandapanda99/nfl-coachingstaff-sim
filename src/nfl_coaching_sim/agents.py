@@ -43,14 +43,21 @@ _EVIDENCE_ID_ALIASES = {
 
 @dataclass(frozen=True)
 class RoleProfile:
+    title: str
     mission: str
+    voice: str
     checklist: tuple[str, ...]
     guardrail: str
 
 
 ROLE_PROFILES = {
     "offensive_coordinator": RoleProfile(
+        title="Offensive Coordinator",
         mission="Build the most executable call plan for the offense in this down, distance, field position, score, and clock state.",
+        voice=(
+            "Sound decisive and economical, like an offensive coordinator on the headset. Use natural phrases such as "
+            "'I like', 'stay on schedule', 'protect it', 'alert', and 'check with me' when they fit; do not force catchphrases."
+        ),
         checklist=(
             "Compare the execution burden and required yardage for every legal call.",
             "Account for protection, sack, turnover, negative-play, and incompletion risk without inventing personnel details.",
@@ -60,7 +67,12 @@ ROLE_PROFILES = {
         guardrail="Discuss unavailable defensive looks only as explicit if/then pre-snap checks, never as observed facts.",
     ),
     "defensive_coordinator": RoleProfile(
+        title="Defensive Coordinator",
         mission="Think like the opposing defensive play caller and identify which offensive choice best attacks the defense's situational objective.",
+        voice=(
+            "Talk like the defensive coordinator advising the offense: identify what the defense must take away, where pressure can come from, "
+            "and which call makes the defense defend the most grass. Keep any front or coverage discussion conditional."
+        ),
         checklist=(
             "State what the defense must prevent given the sticks, score, field position, and clock.",
             "Compare how every legal call can be defeated by pressure, coverage, or numbers at the point of attack.",
@@ -70,7 +82,12 @@ ROLE_PROFILES = {
         guardrail="The actual front, coverage, pressure, box count, personnel, and matchup quality are unavailable; never claim to have observed them.",
     ),
     "analytics_assistant": RoleProfile(
+        title="Analytics Assistant",
         mission="Translate the released evidence into a calibrated comparison of every legal action while keeping the hidden evaluator private.",
+        voice=(
+            "Be the concise booth voice in the coach's ear. Translate the numbers into football consequences; say 'the numbers lean' or "
+            "'the gap is small' instead of reading database fields or sounding like a report."
+        ),
         checklist=(
             "Compare the simple EPA baseline for every legal call, not only the leader.",
             "Separate expected-points value from win-probability, clock, and possession effects.",
@@ -80,7 +97,12 @@ ROLE_PROFILES = {
         guardrail="The simple EP table is evidence, not an oracle; do not claim access to richer simulator estimates.",
     ),
     "clock_management_specialist": RoleProfile(
+        title="Clock Management",
         mission="Protect the team's possession and clock objectives while accounting for both teams' timeout leverage.",
+        voice=(
+            "Speak urgently and concretely about preserving, bleeding, or trading clock. Use sideline language such as 'bank the timeout', "
+            "'the clock is the opponent', and 'we still need a possession' only when the game state supports it."
+        ),
         checklist=(
             "Start with whether the offense should preserve, drain, or balance the clock.",
             "Compare likely clock-stop and runoff consequences for every legal action.",
@@ -90,7 +112,12 @@ ROLE_PROFILES = {
         guardrail="Do not assert an exact runoff or future possession count unless the supplied evidence states it.",
     ),
     "critical_reviewer": RoleProfile(
+        title="Quality Control Coach",
         mission="Audit the staff's football logic and choose the call that survives the strongest factual and situational objections.",
+        voice=(
+            "Be the staff's respectful skeptic. Open naturally with language such as 'hold on', 'the problem with that call', or "
+            "'make sure we're not assuming' when appropriate, then identify the call that survives the objection."
+        ),
         checklist=(
             "Check that every legal action received a fair comparison.",
             "Reject unsupported claims about formations, personnel, weather, tendencies, coverage, or player ability.",
@@ -210,12 +237,16 @@ def _role_system_prompt(role: str, phase: str) -> str:
         else "Audit the anonymized opening calls, rebut the weakest material claim, and then keep or revise your recommendation."
     )
     return (
-        f"You are the NFL staff's {role.replace('_', ' ')}. {profile.mission}\n\n"
+        f"You are an NFL team's {profile.title}. {profile.mission}\n\n"
+        f"HEADSET VOICE: {profile.voice}\n\n"
         f"COACHING CHECKLIST:\n{checklist}\n\n"
         f"GUARDRAIL: {profile.guardrail}\n\n"
-        f"{phase_instruction} Assess every legal action exactly once in the supplied order. "
-        "For each action, provide advantages, risks, clock effect, a 0-to-1 support score, and only evidence IDs from allowed_evidence_ids. "
-        "Copy every evidence ID verbatim as a standalone JSON string; never append punctuation, explanation, translation, or other text to an ID. "
+        f"{phase_instruction} Write the argument and rebuttal as part of a brief, natural exchange among an NFL coaching staff—not an essay or data report. "
+        "Use football language, short sentences, and directly reference the supplied clock, score, sticks, field position, timeouts, and EP values "
+        "when they matter. Assess every legal action exactly once in the supplied order. For each action, provide advantages, risks, clock effect, "
+        "a 0-to-1 support score, and only evidence IDs from allowed_evidence_ids. Evidence IDs are private validation tags: copy them verbatim only "
+        "inside the evidence_ids arrays. Never say or embed an evidence ID in the argument, rebuttal, advantages, risks, clock effect, concerns, "
+        "rationale, or switch condition. "
         "Choose one legal call, name a different legal action as the closest alternative, and state a concrete condition that would switch the call. "
         "Separate supplied facts from conditional football judgment. If going for it, specify run or pass."
     )
@@ -316,10 +347,11 @@ class SingleAgentStrategy:
             decision = self.model.invoke(
                 Decision,
                 (
-                    "You are the NFL head coach. Compare every legal action using the supplied game state, deterministic situation brief, "
+                    "You are the NFL head coach making a live sideline decision. Compare every legal action using the supplied game state, deterministic situation brief, "
                     "and evidence packet before making one legal decision. Balance win probability, expected points, clock, possession value, "
                     "execution risk, and score. Treat formations, personnel, matchups, weather, fronts, coverages, and tendencies as unknown. "
-                    "Never invent unavailable facts or claim access to the hidden evaluator."
+                    "Never invent unavailable facts or claim access to the hidden evaluator. Give a short, decisive football rationale that could "
+                    "actually be said over a headset. Evidence IDs are private metadata and must never appear in the rationale."
                 ),
                 _scenario_prompt(scenario),
             )
@@ -397,6 +429,9 @@ class MultiAgentStrategy:
                 yield StageEvent(
                     stage=f"recommendation:{role}",
                     message=f"{role.replace('_', ' ').title()} sends in " f"{recommendation.decision.call_label}",
+                    role=role,
+                    recommendation=recommendation,
+                    failure=f"{role} initial: {initial_errors[role]}" if role in initial_errors else None,
                 )
         for role in role_order:
             if role in initial_errors:
@@ -427,6 +462,9 @@ class MultiAgentStrategy:
                 yield StageEvent(
                     stage=f"revision:{role}",
                     message=f"{role.replace('_', ' ').title()} finishes the discussion " f"with {recommendation.decision.call_label}!",
+                    role=role,
+                    revision=recommendation,
+                    failure=f"{role} revision: {revision_errors[role]}" if role in revision_errors else None,
                 )
         for role in role_order:
             if role in revision_errors:
@@ -443,10 +481,11 @@ class MultiAgentStrategy:
             decision = self.model.invoke(
                 Decision,
                 (
-                    "You are the head coach. Synthesize the revised staff debate and choose "
+                    "You are the head coach breaking the huddle after a live sideline discussion. Synthesize the revised staff debate and choose "
                     "one legal action. Resolve disagreement explicitly, prioritize winning "
                     "the game over raw expected points, verify claims against the evidence packet, "
-                    "and explain why the closest competing action lost. Use no outside facts or hidden evaluator values."
+                    "and explain why the closest competing action lost. Use no outside facts or hidden evaluator values. Give a short, decisive "
+                    "football rationale suitable for the headset. Evidence IDs are private metadata and must never appear in the rationale."
                 ),
                 _scenario_prompt(scenario)
                 + "\n\nREVISED STAFF DEBATE:\n"
