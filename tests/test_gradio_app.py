@@ -17,6 +17,7 @@ from nfl_coaching_sim.app import (
 from nfl_coaching_sim.data import demo_scenarios
 from nfl_coaching_sim.simulator import DeterministicSimulator
 from nfl_coaching_sim.scenario_library import delete_custom_scenario, load_custom_scenarios, save_custom_scenario
+from nfl_coaching_sim.settings import ApplicationSettings
 
 
 def test_gradio_app_builds_and_critical_callbacks_run_without_model_server(
@@ -61,7 +62,20 @@ def test_gradio_app_builds_and_critical_callbacks_run_without_model_server(
             DeterministicSimulator(),
         )
     )
-    app = create_app(scenarios[:2], DeterministicSimulator(), custom_scenarios_path=custom_path)
+    model_defaults = ApplicationSettings(
+        provider="azure_foundry",
+        model="default-foundry-deployment",
+        base_url="https://example.services.ai.azure.com/openai/v1/",
+        upstream_url="https://example.org/open-model",
+        model_license="Apache-2.0",
+        reasoning_effort="medium",
+    )
+    app = create_app(
+        scenarios[:2],
+        DeterministicSimulator(),
+        custom_scenarios_path=custom_path,
+        settings=model_defaults,
+    )
     edited_custom = create_custom_scenario(
         "Edited Fourth Down",
         2025,
@@ -97,7 +111,7 @@ def test_gradio_app_builds_and_critical_callbacks_run_without_model_server(
     assert escape(scenarios[0].state.down_and_distance) in state
     assert "Expected Value by Call" in baseline
     assert "New situation is on the call sheet" in reset_view[2]
-    assert "Completed coaching responses will appear here" in reset_view[3]
+    assert "Completed responses will appear here in arrival order" in reset_view[3]
     assert "Waiting on the sideline" in reset_view[4]
     assert "No grade on the board yet" in reset_view[5]
     assert "Top option" in baseline
@@ -145,8 +159,13 @@ def test_gradio_app_builds_and_critical_callbacks_run_without_model_server(
     assert "analytics-booth" in str(app.config)
     assert "sideline-analytics" in str(app.config)
     assert "Sideline Connection & Model Settings" in str(app.config)
+    assert "default-foundry-deployment" in str(app.config)
+    assert "https://example.services.ai.azure.com/openai/v1/" in str(app.config)
     assert "live-play-call-status" in str(app.config)
     assert "coaches-meeting-transcript" in str(app.config)
+    assert "headset-timeline--empty" in str(app.config)
+    assert ".headset-message__bubble" in stylesheet
+    assert ".headset-pending__dots" in stylesheet
     assert scenarios[0].display_name in str(app.config)
     assert scenarios[0].scenario_id not in scenarios[0].display_name
     assert result.exit_code == 0

@@ -17,6 +17,8 @@ APPROVED_LICENSES = {
     "MPL-2.0",
 }
 
+REASONING_EFFORTS = {"none", "minimal", "low", "medium", "high", "xhigh", "max"}
+
 
 class ModelProvider(StrEnum):
     OLLAMA = "ollama"
@@ -32,7 +34,8 @@ class ModelConfiguration(BaseModel):
     upstream_url: HttpUrl | None = None
     license: str
     temperature: float = Field(default=0.0, ge=0, le=2)
-    seed: int = 2026
+    seed: int | None = None
+    reasoning_effort: str | None = None
     provider_options: dict[str, Any] = Field(default_factory=dict)
 
     @field_validator("provider", mode="before")
@@ -41,6 +44,16 @@ class ModelConfiguration(BaseModel):
         normalized = str(value).strip().lower()
         if not normalized:
             raise ValueError("provider must not be empty")
+        return normalized
+
+    @field_validator("reasoning_effort", mode="before")
+    @classmethod
+    def normalize_reasoning_effort(cls, value: Any) -> str | None:
+        if value is None or not str(value).strip():
+            return None
+        normalized = str(value).strip().lower()
+        if normalized not in REASONING_EFFORTS:
+            raise ValueError(f"reasoning_effort must be one of {sorted(REASONING_EFFORTS)}")
         return normalized
 
     @model_validator(mode="after")
@@ -69,11 +82,12 @@ class ProviderCapabilities:
         configured = {
             "temperature": configuration.temperature,
             "seed": configuration.seed,
+            "reasoning_effort": configuration.reasoning_effort,
         }
         unknown = self.generation_parameters.difference(configured)
         if unknown:
             raise ValueError(f"provider declares unknown generation parameters: {sorted(unknown)}")
-        return {name: configured[name] for name in self.generation_parameters}
+        return {name: configured[name] for name in self.generation_parameters if configured[name] is not None}
 
 
 @dataclass(frozen=True)

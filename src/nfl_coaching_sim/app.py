@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 import math
-import os
 import re
 from collections.abc import Iterator, Mapping, Sequence
 from html import escape
@@ -12,13 +11,11 @@ from importlib.resources import files
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from dotenv import find_dotenv, load_dotenv
 from pydantic import HttpUrl
 
 from nfl_coaching_sim.agents import (
     ExpectedPointsStrategy,
     ModelConfiguration,
-    ModelProvider,
     MultiAgentStrategy,
     SingleAgentStrategy,
     make_model,
@@ -43,11 +40,10 @@ from nfl_coaching_sim.scenario_library import (
     load_custom_scenarios,
     save_custom_scenario,
 )
+from nfl_coaching_sim.settings import ApplicationSettings, get_application_settings
 
 if TYPE_CHECKING:
     from nfl_coaching_sim.simulator import DeterministicSimulator
-
-load_dotenv(find_dotenv())
 
 
 def load_app_css() -> str:
@@ -373,11 +369,22 @@ def _grade_placeholder() -> str:
 
 
 def _conversation_placeholder() -> str:
-    return (
-        "### Coaches' Headset\n\n"
-        "The headset is quiet. Choose who is making the call, then send the situation to the staff. "
-        "Completed coaching responses will appear here as they come in."
-    )
+    return """
+<section class="headset-timeline headset-timeline--empty" aria-label="Coaches' headset">
+  <header class="headset-timeline__header">
+    <div>
+      <span class="headset-timeline__eyebrow">Coaches' Headset</span>
+      <h3>Live Staff Conversation</h3>
+    </div>
+    <span class="headset-status-chip">Headset quiet</span>
+  </header>
+  <div class="headset-empty-state">
+    <span class="headset-empty-state__icon" aria-hidden="true">🎧</span>
+    <strong>Waiting for the call to come down</strong>
+    <p>Choose who is making the call, then send the situation to the staff. Completed responses will appear here in arrival order.</p>
+  </div>
+</section>
+""".strip()
 
 
 def _grade_card(value: ActionValue) -> str:
@@ -522,6 +529,14 @@ _COACH_TITLES = {
     "critical_reviewer": "Quality Control Coach",
 }
 
+_COACH_INITIALS = {
+    "offensive_coordinator": "OC",
+    "defensive_coordinator": "DC",
+    "analytics_assistant": "AN",
+    "clock_management_specialist": "CLK",
+    "critical_reviewer": "QC",
+}
+
 
 def _spoken_text(value: str, scenario: Scenario) -> str:
     """Replace any accidentally spoken private evidence tag with its football fact."""
@@ -545,27 +560,124 @@ def _visible_headset_failure(value: str) -> str:
     return f"{speaker_label}: {detail}" if separator else value
 
 
+def _headset_spoken_text(value: str, scenario: Scenario) -> str:
+    spoken = _spoken_text(value, scenario)
+    return re.sub(
+        r"^(?:OC|DC|Analytics|Clock|QC|Quality Control|Head Coach)\s*:\s*",
+        "",
+        spoken,
+        count=1,
+        flags=re.IGNORECASE,
+    )
+
+
+def _headset_phase(title: str, description: str) -> str:
+    return f"""
+<div class="headset-phase" role="separator">
+  <span>{_safe(title)}</span>
+  <small>{_safe(description)}</small>
+</div>
+""".strip()
+
+
+def _pending_coaches(count: int, message: str) -> str:
+    if count <= 0:
+        return ""
+    coach_label = "coach" if count == 1 else "coaches"
+    return f"""
+<div class="headset-pending" role="status">
+  <span class="headset-pending__dots" aria-hidden="true"><i></i><i></i><i></i></span>
+  <span><strong>{count} {coach_label}</strong> {_safe(message)}</span>
+</div>
+""".strip()
+
+
+def _coach_message_shell(
+    role: str,
+    phase_label: str,
+    call_label: str,
+    spoken: str,
+    notes: str,
+) -> str:
+    title = _COACH_TITLES.get(role, role.replace("_", " ").title())
+    initials = _COACH_INITIALS.get(role, "STAFF")
+    role_class = re.sub(r"[^a-z0-9-]", "-", role.lower().replace("_", "-"))
+    return f"""
+<article class="headset-message headset-message--{role_class}">
+  <div class="headset-message__avatar" aria-hidden="true">{_safe(initials)}</div>
+  <div class="headset-message__bubble">
+    <header class="headset-message__meta">
+      <strong>{_safe(title)}</strong>
+      <span class="headset-phase-chip">{_safe(phase_label)}</span>
+      <span class="headset-call-chip">{_safe(call_label)}</span>
+    </header>
+    <p class="headset-message__spoken">{_safe(spoken)}</p>
+    {notes}
+  </div>
+</article>
+""".strip()
+
+
 def _opening_coach_message(rec: Recommendation, scenario: Scenario) -> str:
-    title = _COACH_TITLES.get(rec.role, rec.role.replace("_", " ").title())
-    concerns = "; ".join(_spoken_text(item, scenario) for item in rec.concerns[:2]) or "No additional alert."
-    return (
-        f"#### {title}\n\n"
-        f"> {_spoken_text(rec.argument, scenario)}\n\n"
-        f"**My call:** {rec.decision.call_label}  \n"
-        f"**Alert:** {concerns}  \n"
-        f"**Check to {rec.closest_alternative.football_label.lower()} if:** "
-        f"{_spoken_text(rec.switch_condition, scenario)}"
+    concerns = "; ".join(_headset_spoken_text(item, scenario) for item in rec.concerns[:2]) or "No additional alert."
+    notes = f"""
+<details class="headset-notes">
+  <summary>Call-sheet notes</summary>
+  <dl>
+    <div><dt>Alert</dt><dd>{_safe(concerns)}</dd></div>
+    <div><dt>Check to {_safe(rec.closest_alternative.football_label.lower())} if</dt><dd>{_safe(_headset_spoken_text(rec.switch_condition, scenario))}</dd></div>
+  </dl>
+</details>
+""".strip()
+    return _coach_message_shell(
+        rec.role,
+        "Opening call",
+        rec.decision.call_label,
+        _headset_spoken_text(rec.argument, scenario),
+        notes,
     )
 
 
 def _revision_coach_message(rec: RevisedRecommendation, scenario: Scenario) -> str:
-    title = _COACH_TITLES.get(rec.role, rec.role.replace("_", " ").title())
-    return (
-        f"#### {title} checks back in\n\n"
-        f"> {_spoken_text(rec.rebuttal, scenario)}\n\n"
-        f"**Final recommendation:** {rec.decision.call_label}  \n"
-        f"**Last-second check:** {_spoken_text(rec.switch_condition, scenario)}"
+    notes = f"""
+<details class="headset-notes">
+  <summary>What could change the call?</summary>
+  <dl><div><dt>Last-second check</dt><dd>{_safe(_headset_spoken_text(rec.switch_condition, scenario))}</dd></div></dl>
+</details>
+""".strip()
+    return _coach_message_shell(
+        rec.role,
+        "Staff adjustment",
+        rec.decision.call_label,
+        _headset_spoken_text(rec.rebuttal, scenario),
+        notes,
     )
+
+
+def _head_coach_message(decision: Decision, scenario: Scenario) -> str:
+    return f"""
+<article class="headset-message headset-message--head-coach">
+  <div class="headset-message__avatar" aria-hidden="true">HC</div>
+  <div class="headset-message__bubble">
+    <header class="headset-message__meta">
+      <strong>Head Coach</strong>
+      <span class="headset-phase-chip">Call is in</span>
+      <span class="headset-call-chip">{_safe(decision.call_label)}</span>
+    </header>
+    <p class="headset-message__spoken">{_safe(_headset_spoken_text(decision.rationale, scenario))}</p>
+  </div>
+</article>
+""".strip()
+
+
+def _headset_failures(failures: Sequence[str]) -> str:
+    if not failures:
+        return ""
+    notices = "".join(
+        f'<div class="headset-system-message"><span aria-hidden="true">⚠</span><p>{_safe(_visible_headset_failure(item))}</p></div>'
+        for item in failures
+    )
+    return _headset_phase("Headset notices", "Communication fallbacks from this staff meeting") + notices
 
 
 def format_live_coaching_conversation(
@@ -576,45 +688,53 @@ def format_live_coaching_conversation(
     head_coach: Decision | None = None,
     failures: Sequence[str] = (),
 ) -> str:
-    """Render stable coach slots while completed structured responses arrive."""
+    """Render an append-only headset feed in model-response arrival order."""
 
-    sections = [
-        "### Opening Headset Check",
-        "Each coach gets one clean turn before the staff challenges the call.",
+    messages = [
+        _headset_phase(
+            "Opening Headset Check",
+            "Independent recommendations · displayed in arrival order",
+        ),
+        *(_opening_coach_message(rec, scenario) for rec in initial_by_role.values()),
     ]
-    for role, title in _COACH_TITLES.items():
-        recommendation = initial_by_role.get(role)
-        if recommendation is None:
-            sections.append(f"#### {title}\n\n> _Headset open — reviewing the call sheet…_")
-        else:
-            sections.append(_opening_coach_message(recommendation, scenario))
+    opening_pending = len(_COACH_TITLES) - len(initial_by_role)
+    if phase == "opening":
+        messages.append(_pending_coaches(opening_pending, "still checking the front, clock, and call sheet…"))
 
     if phase in {"revision", "decision"}:
-        sections.extend(
-            [
-                "### Staff Challenge Round",
-                "The coaches hear the other calls, challenge the weak spots, and check back in.",
-            ]
+        messages.append(
+            _headset_phase(
+                "Staff Challenge Round",
+                "The opening calls are in · coaches now challenge the weak spots",
+            )
         )
-        for role, title in _COACH_TITLES.items():
-            revision = revised_by_role.get(role)
-            if revision is None:
-                sections.append(f"#### {title} checks back in\n\n> _Listening to the staff challenge…_")
-            else:
-                sections.append(_revision_coach_message(revision, scenario))
+        messages.extend(_revision_coach_message(rec, scenario) for rec in revised_by_role.values())
+        if phase == "revision":
+            revision_pending = len(_COACH_TITLES) - len(revised_by_role)
+            messages.append(_pending_coaches(revision_pending, "still working through the staff challenge…"))
 
     if phase == "decision":
+        messages.append(_headset_phase("Head Coach Breaks the Huddle", "The staff is off the headset · one call goes in"))
         if head_coach is None:
-            sections.append("### Head Coach Breaks the Huddle\n\n> _Weighing the staff's final recommendations…_")
+            messages.append(_pending_coaches(1, "is weighing the final recommendations…"))
         else:
-            sections.append(
-                "### Head Coach Breaks the Huddle\n\n"
-                f"> {_spoken_text(head_coach.rationale, scenario)}\n\n"
-                f"**Call:** {head_coach.call_label}"
-            )
-    if failures:
-        sections.append("### Headset / Communication Issues\n\n" + "\n".join(f"- {_visible_headset_failure(item)}" for item in failures))
-    return "\n\n".join(sections)
+            messages.append(_head_coach_message(head_coach, scenario))
+    messages.append(_headset_failures(failures))
+    return f"""
+<section class="headset-timeline" aria-label="Coaches' headset">
+  <header class="headset-timeline__header">
+    <div>
+      <span class="headset-timeline__eyebrow">Coaches' Headset</span>
+      <h3>Live Staff Conversation</h3>
+    </div>
+    <a class="headset-jump-link" href="#headset-latest">Jump to latest ↓</a>
+  </header>
+  <div class="headset-feed" role="log" aria-live="polite" aria-relevant="additions text">
+    {''.join(messages)}
+    <div id="headset-latest" aria-hidden="true"></div>
+  </div>
+</section>
+""".strip()
 
 
 def format_coaching_conversation(trace: DecisionTrace, scenario: Scenario) -> str:
@@ -625,7 +745,17 @@ def format_coaching_conversation(trace: DecisionTrace, scenario: Scenario) -> st
             "expected_points": "Analytics Booth",
             "single_agent": "Head Coach",
         }.get(trace.strategy, trace.strategy.replace("_", " ").title())
-        return f"### {strategy_name}: {trace.decision.call_label}\n\n{_spoken_text(trace.decision.rationale, scenario)}"
+        return f"""
+<section class="headset-timeline" aria-label="Coaches' headset">
+  <header class="headset-timeline__header">
+    <div><span class="headset-timeline__eyebrow">Coaches' Headset</span><h3>Live Staff Conversation</h3></div>
+  </header>
+  <div class="headset-feed" role="log">
+    {_headset_phase(strategy_name, "One voice is making the call")}
+    {_head_coach_message(trace.decision, scenario)}
+  </div>
+</section>
+""".strip()
     return format_live_coaching_conversation(
         scenario,
         {item.role: item for item in trace.transcript.initial},
@@ -666,6 +796,7 @@ def run_strategy_events(
             upstream_url=HttpUrl(upstream_url) if upstream_url else None,
             license=model_license,
             base_url=base_url,
+            reasoning_effort=get_application_settings(provider_name).reasoning_effort,
         )
         model = make_model(configuration)
         if strategy_name == "single_agent":
@@ -704,9 +835,10 @@ def run_strategy_events(
             if trace is None:
                 raise RuntimeError("The coaches' meeting ended without a legal call reaching the sideline.")
     value = simulator.score(scenario, trace.decision)
+    final_conversation = live_transcript if strategy_name == "multi_agent" else format_coaching_conversation(trace, scenario)
     yield (
         _live_status(f"CALL IS IN: **{trace.decision.call_label}**"),
-        format_coaching_conversation(trace, scenario),
+        final_conversation,
         _decision_card(trace),
         _grade_card(value),
     )
@@ -716,9 +848,11 @@ def create_app(
     scenarios: Sequence[Scenario] | None = None,
     simulator: DeterministicSimulator | None = None,
     custom_scenarios_path: Path | None = None,
+    settings: ApplicationSettings | None = None,
 ) -> Any:
     import gradio as gr
 
+    model_defaults = settings or get_application_settings()
     prebuilt_scenarios = list(scenarios or demo_scenarios())
     saved_custom_scenarios = load_custom_scenarios(custom_scenarios_path) if custom_scenarios_path is not None else []
     scenario_list = [*prebuilt_scenarios]
@@ -996,23 +1130,25 @@ def create_app(
                     with gr.Accordion("Sideline Connection & Model Settings", open=False, elem_id="provider-config"):
                         provider = gr.Dropdown(
                             choices=model_provider_choices(),
-                            value=ModelProvider.AZURE_FOUNDRY.value,
+                            value=model_defaults.provider,
                             label="Coaching Staff AI Model Provider",
                         )
                         model_name = gr.Textbox(
-                            value=os.environ.get("FOUNDRY_MODEL"),
+                            value=model_defaults.model,
                             label="Model / Deployment for the Call Sheet",
                         )
                         upstream_url = gr.Textbox(
+                            value=model_defaults.upstream_url,
                             label="Model Card / Film Room URL (optional)",
                             placeholder="https://huggingface.co/organization/model",
                         )
                         model_license = gr.Dropdown(
                             ["Apache-2.0", "MIT", "BSD-2-Clause", "BSD-3-Clause", "MPL-2.0"],
-                            label="Model License (Ollama Only)",
+                            value=model_defaults.model_license,
+                            label="Declared Open-Model License",
                         )
                         base_url = gr.Textbox(
-                            value=os.environ.get("FOUNDRY_ENDPOINT") or "http://127.0.0.1:11434",
+                            value=model_defaults.base_url,
                             label="Sideline Connection / Provider Endpoint",
                             info="Ollama URL or a Foundry endpoint (ending in /openai/v1/). "
                             "Foundry uses Entra ID unless AZURE_FOUNDRY_API_KEY is set.",
@@ -1034,9 +1170,8 @@ def create_app(
                 run = gr.Button("🏈 Send in the Call! 🏈", variant="primary", elem_id="send-play-call")
                 with gr.Group(elem_id="play-call-status"):
                     status = gr.Markdown(_live_status("Waiting for Coach to put in the call..."), elem_id="live-play-call-status")
-        transcript = gr.Markdown(
+        transcript = gr.HTML(
             _conversation_placeholder(),
-            label="Coaches' Headset — Live Conversation",
             elem_id="coaches-meeting-transcript",
         )
         with gr.Row(equal_height=True, elem_id="decision-dashboard"):

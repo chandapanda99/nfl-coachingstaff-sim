@@ -58,7 +58,18 @@ The included software does not claim that an arbitrary Ollama tag is open source
 
 ### Azure AI Foundry
 
-Choose **Azure AI Foundry** in Gradio or pass `--provider azure_foundry` to the benchmark command. Interactive use requires:
+Azure AI Foundry is the default provider for both Gradio and the benchmark CLI. A single typed settings loader reads `.env` and supplies the same startup defaults to both
+entry points. Configure:
+
+```dotenv
+FOUNDRY_MODEL=YOUR_FOUNDRY_DEPLOYMENT
+FOUNDRY_ENDPOINT=https://YOUR-RESOURCE.services.ai.azure.com/openai/v1/
+FOUNDRY_UPSTREAM_URL=https://example.org/upstream-open-model
+FOUNDRY_MODEL_LICENSE=Apache-2.0
+AZURE_FOUNDRY_REASONING_EFFORT=medium
+```
+
+Interactive use requires:
 
 - The Foundry deployment name as the model.
 - The deployment endpoint ending in `/openai/v1/`.
@@ -69,8 +80,19 @@ The model source URL is optional in Gradio because it is not used for inference.
 Authentication uses `DefaultAzureCredential`, so local Azure CLI credentials, managed identity, workload identity, and environment-based service principals work without
 putting secrets in the app. If key authentication is unavoidable, set
 `AZURE_FOUNDRY_API_KEY` in the process environment. Keys are never accepted through Gradio or CLI options and are not written to benchmark artifacts. Foundry model calls use
-LangChain's Responses API mode (`use_responses_api=True`). Each provider adapter allowlists its supported generation parameters: Foundry Responses receives `temperature`,
-while Ollama receives `temperature` and `seed`.
+LangChain's Responses API mode (`use_responses_api=True`). Each provider adapter allowlists its supported generation parameters: Foundry receives only an optional reasoning
+effort, while Ollama receives `temperature` and `seed`. Temperature is never sent to Foundry deployments.
+
+For a reasoning-capable Foundry deployment, set `AZURE_FOUNDRY_REASONING_EFFORT` to a level supported by that deployment (for example, `low`, `medium`, or `high`). The
+application sends it as `reasoning={"effort": ...}` through the Responses API. Leave the variable unset to use the model's default reasoning behavior.
+`NFL_COACH_REASONING_EFFORT` is also available as a provider-neutral fallback for future adapters; provider-specific variables take precedence, and unsupported providers do
+not receive the setting.
+
+The loader also accepts provider-neutral overrides: `NFL_COACH_MODEL_PROVIDER`, `NFL_COACH_MODEL`, `NFL_COACH_MODEL_ENDPOINT`, `NFL_COACH_MODEL_UPSTREAM_URL`,
+`NFL_COACH_MODEL_LICENSE`, and `NFL_COACH_REASONING_EFFORT`. Provider-neutral model values take precedence over provider-specific model values, and process environment
+variables take precedence over `.env`. Gradio selections and explicit CLI options remain the final per-run overrides.
+
+The application does not load `config/models.json`; `.env` is the single source for startup model defaults.
 
 Example:
 
@@ -79,9 +101,7 @@ nfl-coach benchmark run ^
   --strategy single_agent ^
   --provider azure_foundry ^
   --model YOUR_FOUNDRY_DEPLOYMENT ^
-  --base-url https://YOUR-RESOURCE.services.ai.azure.com/openai/v1/ ^
-  --upstream-url https://example.org/upstream-open-model ^
-  --model-license Apache-2.0
+  --base-url https://YOUR-RESOURCE.services.ai.azure.com/openai/v1/
 ```
 
 Azure AI Foundry is a proprietary hosted provider. The application continues to enforce an approved open license for the selected model, and benchmark provenance distinguishes

@@ -46,4 +46,4 @@ target-version = "py312"
 line-length = 125
 
 [tool.black]
-line-length = 142
+line-length = 140

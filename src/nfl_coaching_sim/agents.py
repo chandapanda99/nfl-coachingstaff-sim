@@ -324,10 +324,7 @@ class ExpectedPointsStrategy:
         started = time.perf_counter()
         return DecisionTrace(
             strategy=self.name,
-            decision=_ep_decision(
-                scenario,
-                "The analytics booth sends in the legal call with the best expected points added.",
-            ),
+            decision=_ep_decision(scenario, "The analytics booth sends in the legal call with the best expected points added"),
             latency_seconds=time.perf_counter() - started,
             model_calls=0,
         )
@@ -407,7 +404,9 @@ class MultiAgentStrategy:
             _scenario_prompt(scenario) + "\n\nANONYMIZED INITIAL RECOMMENDATIONS:\n" + json.dumps(arguments, indent=2),
         )
         result = result.model_copy(update={"role": role})
-        return RevisedRecommendation.model_validate(_validate_recommendation(result, scenario, build_situation_brief(scenario)).model_dump())
+        return RevisedRecommendation.model_validate(
+            _validate_recommendation(result, scenario, build_situation_brief(scenario)).model_dump()
+        )
 
     def iter_decide(self, scenario: Scenario) -> Iterator[StageEvent]:
         started = time.perf_counter()
@@ -437,10 +436,7 @@ class MultiAgentStrategy:
             if role in initial_errors:
                 failures.append(f"{role} initial: {initial_errors[role]}")
         initial = [initial_by_role[role] for role in role_order]
-        yield StageEvent(
-            stage="recommendations",
-            message="Every coordinator has checked the front, the clock, and the call sheet.",
-        )
+        yield StageEvent(stage="recommendations", message="Coordinators checking the front, the clock, and the call sheet...")
 
         calls += len(role_order)
         revised_by_role: dict[str, RevisedRecommendation] = {}
@@ -472,7 +468,7 @@ class MultiAgentStrategy:
         revised = [revised_by_role[role] for role in role_order]
         yield StageEvent(
             stage="debate",
-            message="The staff challenged tendencies, clock math, and situational risk; adjustments are in.",
+            message="The staff has challenged tendencies, clock math, and situational risk; the adjustments are in...",
         )
 
         calls += 1
@@ -526,7 +522,7 @@ class MultiAgentStrategy:
             if event.trace is not None:
                 final = event.trace
         if final is None:  # defensive invariant
-            raise RuntimeError("The coaches' meeting ended without a legal call reaching the sideline.")
+            raise RuntimeError("The coaches' meeting ended without a legal call reaching the sideline!")
         return final
 
 

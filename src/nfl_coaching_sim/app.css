@@ -414,42 +414,457 @@
 
 #coaches-meeting-transcript {
     margin-top: 1rem;
-    padding: 0.35rem 1rem 1rem;
-    border: 1px solid #cbd5e1;
-    border-top: 0.3rem solid #c2410c;
-    border-radius: 0.8rem;
-    background: #ffffff;
-    box-shadow: 0 0.2rem 0.6rem rgba(15, 23, 42, 0.08);
+    padding: 0;
+    border: 0;
+    background: transparent;
+    box-shadow: none;
 }
 
-#coaches-meeting-transcript h3 {
+.headset-timeline {
+    overflow: hidden;
+    border: 1px solid #cbd5e1;
+    border-top: 0.3rem solid #c2410c;
+    border-radius: 0.85rem;
+    background: #f8fafc;
+    box-shadow: 0 0.2rem 0.6rem rgba(15, 23, 42, 0.08);
+    color: #0f172a;
+}
+
+.headset-timeline__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0.9rem 1rem;
+    border-bottom: 1px solid #e2e8f0;
+    background: #ffffff;
+}
+
+.headset-timeline__eyebrow {
+    display: block;
+    margin-bottom: 0.12rem;
+    color: #c2410c;
+    font-size: 0.7rem;
+    font-weight: 850;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+}
+
+.headset-timeline__header h3 {
+    margin: 0;
+    color: #0f172a;
+    font-size: 1.05rem;
+    line-height: 1.25;
+}
+
+.headset-jump-link,
+.headset-status-chip {
+    flex: 0 0 auto;
+    padding: 0.35rem 0.6rem;
+    border: 1px solid #fed7aa;
+    border-radius: 999px;
+    background: #fff7ed;
+    color: #9a3412;
+    font-size: 0.7rem;
+    font-weight: 800;
+    text-decoration: none;
+}
+
+.headset-jump-link:hover {
+    border-color: #fb923c;
+    background: #ffedd5;
+}
+
+.headset-feed {
+    overflow-x: hidden;
+    overflow-y: auto;
+    max-height: 38rem;
+    padding: 0.9rem 1rem 1rem;
+    scroll-behavior: smooth;
+    scrollbar-gutter: stable;
+}
+
+.headset-phase {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 0.65rem;
+    margin: 0.2rem 0 0.85rem;
+}
+
+.headset-phase::after {
+    content: "";
+    grid-column: 1 / -1;
+    height: 1px;
+    background: #dbe3ee;
+}
+
+.headset-phase span {
+    color: #9a3412;
+    font-size: 0.75rem;
+    font-weight: 850;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+}
+
+.headset-phase small {
+    overflow: hidden;
+    color: #64748b;
+    font-size: 0.72rem;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.headset-message {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.65rem;
+    margin: 0 0 0.85rem;
+}
+
+.headset-message__avatar {
+    display: grid;
+    width: 2.35rem;
+    height: 2.35rem;
+    flex: 0 0 2.35rem;
+    place-items: center;
+    border: 1px solid #cbd5e1;
+    border-radius: 50%;
+    background: #334155;
+    color: #ffffff;
+    font-size: 0.68rem;
+    font-weight: 900;
+    letter-spacing: 0.03em;
+}
+
+.headset-message--offensive-coordinator .headset-message__avatar {
+    background: #9a3412;
+}
+
+.headset-message--defensive-coordinator .headset-message__avatar {
+    background: #1e3a8a;
+}
+
+.headset-message--analytics-assistant .headset-message__avatar {
+    background: #075985;
+}
+
+.headset-message--clock-management-specialist .headset-message__avatar {
+    background: #4c1d95;
+}
+
+.headset-message--critical-reviewer .headset-message__avatar {
+    background: #475569;
+}
+
+.headset-message__bubble {
+    min-width: 0;
+    max-width: min(88%, 76rem);
+    padding: 0.75rem 0.85rem;
+    border: 1px solid #dbe3ee;
+    border-radius: 0.2rem 0.8rem 0.8rem;
+    background: #ffffff;
+    box-shadow: 0 0.1rem 0.3rem rgba(15, 23, 42, 0.05);
+}
+
+.headset-message__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.35rem;
+    margin-bottom: 0.45rem;
+}
+
+.headset-message__meta strong {
+    margin-right: 0.15rem;
+    color: #0f172a;
+    font-size: 0.82rem;
+}
+
+.headset-phase-chip,
+.headset-call-chip {
+    padding: 0.2rem 0.42rem;
+    border-radius: 999px;
+    font-size: 0.62rem;
+    font-weight: 850;
+    letter-spacing: 0.04em;
+    line-height: 1.2;
+    text-transform: uppercase;
+}
+
+.headset-phase-chip {
+    background: #e2e8f0;
+    color: #475569;
+}
+
+.headset-call-chip {
+    border: 1px solid #fed7aa;
+    background: #fff7ed;
     color: #9a3412;
 }
 
-#coaches-meeting-transcript h4 {
-    margin-top: 1.2rem;
+.headset-message__spoken {
+    margin: 0;
+    color: #1e293b;
+    font-size: 0.9rem;
+    line-height: 1.52;
+    overflow-wrap: anywhere;
 }
 
-#coaches-meeting-transcript blockquote {
-    margin: 0.4rem 0 0.7rem;
-    padding: 0.55rem 0.8rem;
-    border-left: 0.25rem solid #fb923c;
-    border-radius: 0.25rem;
+.headset-notes {
+    margin-top: 0.65rem;
+    border-top: 1px solid #e2e8f0;
+    color: #475569;
+}
+
+.headset-notes summary {
+    padding-top: 0.55rem;
+    color: #9a3412;
+    cursor: pointer;
+    font-size: 0.72rem;
+    font-weight: 800;
+}
+
+.headset-notes dl {
+    display: grid;
+    gap: 0.5rem;
+    margin: 0.65rem 0 0;
+}
+
+.headset-notes dl > div {
+    display: grid;
+    grid-template-columns: minmax(7rem, 0.28fr) minmax(0, 1fr);
+    gap: 0.65rem;
+}
+
+.headset-notes dt {
+    color: #64748b;
+    font-size: 0.67rem;
+    font-weight: 850;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.headset-notes dd {
+    margin: 0;
+    font-size: 0.78rem;
+    line-height: 1.45;
+}
+
+.headset-pending {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.55rem;
+    margin: 0 0 0.9rem 3rem;
+    padding: 0.5rem 0.7rem;
+    border: 1px dashed #cbd5e1;
+    border-radius: 999px;
+    background: #f1f5f9;
+    color: #64748b;
+    font-size: 0.75rem;
+}
+
+.headset-pending__dots {
+    display: inline-flex;
+    gap: 0.18rem;
+}
+
+.headset-pending__dots i {
+    width: 0.32rem;
+    height: 0.32rem;
+    border-radius: 50%;
+    background: #f97316;
+    animation: headset-pulse 1.2s infinite ease-in-out;
+}
+
+.headset-pending__dots i:nth-child(2) {
+    animation-delay: 0.15s;
+}
+
+.headset-pending__dots i:nth-child(3) {
+    animation-delay: 0.3s;
+}
+
+@keyframes headset-pulse {
+    0%,
+    60%,
+    100% {
+        opacity: 0.35;
+        transform: translateY(0);
+    }
+
+    30% {
+        opacity: 1;
+        transform: translateY(-0.12rem);
+    }
+}
+
+.headset-message--head-coach {
+    flex-direction: row-reverse;
+}
+
+.headset-message--head-coach .headset-message__avatar {
+    border-color: #fb923c;
+    background: #c2410c;
+}
+
+.headset-message--head-coach .headset-message__bubble {
+    border-color: #fdba74;
+    border-radius: 0.8rem 0.2rem 0.8rem 0.8rem;
     background: #fff7ed;
 }
 
-.dark #coaches-meeting-transcript {
+.headset-system-message {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    margin: 0 0 0.55rem;
+    padding: 0.55rem 0.7rem;
+    border: 1px solid #fde68a;
+    border-radius: 0.55rem;
+    background: #fffbeb;
+    color: #854d0e;
+}
+
+.headset-system-message p {
+    margin: 0;
+    font-size: 0.76rem;
+    line-height: 1.45;
+}
+
+.headset-empty-state {
+    display: flex;
+    min-height: 11rem;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+    color: #64748b;
+    text-align: center;
+}
+
+.headset-empty-state__icon {
+    margin-bottom: 0.45rem;
+    font-size: 1.6rem;
+}
+
+.headset-empty-state strong {
+    color: #334155;
+}
+
+.headset-empty-state p {
+    max-width: 38rem;
+    margin: 0.35rem 0 0;
+    font-size: 0.82rem;
+    line-height: 1.5;
+}
+
+.dark .headset-timeline {
     border-color: #475569;
     border-top-color: #fb923c;
+    background: #0f172a;
+    color: #f8fafc;
+}
+
+.dark .headset-timeline__header,
+.dark .headset-message__bubble {
+    border-color: #334155;
     background: #1e293b;
 }
 
-.dark #coaches-meeting-transcript h3 {
+.dark .headset-timeline__header h3,
+.dark .headset-message__meta strong,
+.dark .headset-message__spoken,
+.dark .headset-empty-state strong {
+    color: #f8fafc;
+}
+
+.dark .headset-phase::after,
+.dark .headset-notes {
+    border-color: #334155;
+}
+
+.dark .headset-phase span,
+.dark .headset-timeline__eyebrow,
+.dark .headset-notes summary {
     color: #fdba74;
 }
 
-.dark #coaches-meeting-transcript blockquote {
-    background: #292524;
+.dark .headset-phase small,
+.dark .headset-notes,
+.dark .headset-empty-state {
+    color: #94a3b8;
+}
+
+.dark .headset-pending {
+    border-color: #475569;
+    background: #172033;
+    color: #cbd5e1;
+}
+
+.dark .headset-message--head-coach .headset-message__bubble {
+    border-color: #c2410c;
+    background: #431407;
+}
+
+.dark .headset-system-message {
+    border-color: #854d0e;
+    background: #422006;
+    color: #fde68a;
+}
+
+body.dark #coaches-meeting-transcript .headset-message__bubble {
+    border-color: #334155;
+    background: #1e293b;
+}
+
+body.dark #coaches-meeting-transcript .headset-message__meta strong,
+body.dark #coaches-meeting-transcript .headset-message__spoken {
+    color: #f8fafc;
+}
+
+body.dark #coaches-meeting-transcript .headset-message--head-coach .headset-message__bubble {
+    border-color: #c2410c;
+    background: #431407;
+}
+
+@media (max-width: 700px) {
+    .headset-timeline__header {
+        align-items: flex-start;
+    }
+
+    .headset-feed {
+        max-height: 32rem;
+        padding: 0.75rem;
+    }
+
+    .headset-phase {
+        grid-template-columns: 1fr;
+        gap: 0.2rem;
+    }
+
+    .headset-phase small {
+        white-space: normal;
+    }
+
+    .headset-message__bubble {
+        max-width: calc(100% - 2.75rem);
+    }
+
+    .headset-message__avatar {
+        width: 2.1rem;
+        height: 2.1rem;
+        flex-basis: 2.1rem;
+    }
+
+    .headset-notes dl > div {
+        grid-template-columns: 1fr;
+        gap: 0.15rem;
+    }
+
+    .headset-pending {
+        margin-left: 2.75rem;
+    }
 }
 
 .coach-card {

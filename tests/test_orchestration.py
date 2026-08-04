@@ -22,6 +22,7 @@ from nfl_coaching_sim.models import (
     RevisedRecommendation,
 )
 from nfl_coaching_sim.simulator import DeterministicSimulator
+from nfl_coaching_sim.settings import get_application_settings
 
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
 
@@ -93,6 +94,11 @@ class FakeStructuredModel:
 def test_full_debate_uses_deterministic_vote_when_synthesis_fails(
     monkeypatch,
 ) -> None:
+    monkeypatch.delenv("NFL_COACH_MODEL_PROVIDER", raising=False)
+    monkeypatch.setenv("AZURE_FOUNDRY_REASONING_EFFORT", "medium")
+    defaults = get_application_settings()
+    assert defaults.provider == ModelProvider.AZURE_FOUNDRY
+    assert defaults.reasoning_effort == "medium"
     foundry = ModelConfiguration(
         provider=ModelProvider.AZURE_FOUNDRY,
         model="open-model-deployment",
@@ -100,6 +106,7 @@ def test_full_debate_uses_deterministic_vote_when_synthesis_fails(
         license="Apache-2.0",
         temperature=0.25,
         seed=77,
+        reasoning_effort=defaults.reasoning_effort,
     )
     assert foundry.model_id == "azure_foundry:open-model-deployment"
     assert foundry.upstream_url is None
@@ -108,12 +115,19 @@ def test_full_debate_uses_deterministic_vote_when_synthesis_fails(
     assert foundry_model.model_id == foundry.model_id
     assert foundry_model.authentication == "api_key_environment"
     assert foundry_model.capabilities.api_mode == "responses"
-    assert foundry_model.effective_generation_parameters == {"temperature": 0.25}
+    assert foundry_model.effective_generation_parameters == {"reasoning_effort": "medium"}
     assert foundry_model._model.use_responses_api is True
     foundry_payload = foundry_model._model._get_request_payload("test play call")
-    assert foundry_payload["temperature"] == 0.25
+    assert foundry_payload["reasoning"] == {"effort": "medium"}
+    assert "temperature" not in foundry_payload
     assert "seed" not in foundry_payload
     assert foundry_model._model._use_responses_api(foundry_payload) is True
+
+    foundry_without_reasoning = make_model(foundry.model_copy(update={"reasoning_effort": None}))
+    foundry_without_reasoning_payload = foundry_without_reasoning._model._get_request_payload("test play call")
+    assert foundry_without_reasoning.effective_generation_parameters == {}
+    assert "temperature" not in foundry_without_reasoning_payload
+    assert "reasoning" not in foundry_without_reasoning_payload
 
     ollama_model = make_model(
         ModelConfiguration(
@@ -189,17 +203,22 @@ def test_full_debate_uses_deterministic_vote_when_synthesis_fails(
     assert len(stage_events) == 13
     assert all(event.recommendation is not None and event.role == event.recommendation.role for event in opening_events)
     assert all(event.revision is not None and event.role == event.revision.role for event in revision_events)
-    assert opening_snapshots[0].count("Headset open — reviewing the call sheet") == 4
-    assert opening_snapshots[-1].count("Headset open — reviewing the call sheet") == 0
+    assert "<strong>4 coaches</strong> still checking" in opening_snapshots[0]
+    assert "still checking the front" not in opening_snapshots[-1]
+    rendered_title_positions = [
+        opening_snapshots[-1].index(f"headset-message--{event.role.replace('_', '-')}") for event in opening_events if event.role
+    ]
+    assert rendered_title_positions == sorted(rendered_title_positions)
     assert "Staff Challenge Round" in revision_snapshot
-    assert revision_snapshot.count("Listening to the staff challenge") == 0
+    assert "still working through the staff challenge" not in revision_snapshot
     assert len(ui_updates) == 16
-    assert "Completed coaching responses will appear here" in ui_updates[0][1]
-    assert ui_updates[1][1].count("Headset open — reviewing the call sheet") == 5
-    assert any(update[1].count("Headset open — reviewing the call sheet") == 4 for update in ui_updates)
+    assert "Completed responses will appear here in arrival order" in ui_updates[0][1]
+    assert "<strong>5 coaches</strong> still checking" in ui_updates[1][1]
+    assert any("<strong>4 coaches</strong> still checking" in update[1] for update in ui_updates)
     assert any("Staff Challenge Round" in update[1] for update in ui_updates)
-    assert any("Listening to the staff challenge" in update[1] for update in ui_updates)
+    assert any("still working through the staff challenge" in update[1] for update in ui_updates)
     assert "Head Coach Breaks the Huddle" in ui_updates[-1][1]
+    assert "headset-message--head-coach" in ui_updates[-1][1]
     assert "CALL IS IN:" in ui_updates[-1][0]
     assert fake_model.max_active_calls > 1
     assert trace.fallback_used is True
@@ -209,6 +228,7 @@ def test_full_debate_uses_deterministic_vote_when_synthesis_fails(
     assert "Opening Headset Check" in conversation
     assert "Offensive Coordinator" in conversation
     assert "Head Coach Breaks the Huddle" in conversation
+    assert "Call-sheet notes" in conversation
     assert "Evidence:" not in conversation
     assert "CLOCK_PRIORITY" not in conversation
     assert "EP_BASELINE_" not in conversation

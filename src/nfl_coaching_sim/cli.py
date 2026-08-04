@@ -8,6 +8,10 @@ from typing import Annotated
 import typer
 from pydantic import HttpUrl
 
+from nfl_coaching_sim.settings import get_application_settings
+
+DEFAULT_MODEL_SETTINGS = get_application_settings()
+
 app = typer.Typer(help="Virtual NFL coaching staff and late-game decision lab", invoke_without_command=True, no_args_is_help=False)
 data_app = typer.Typer(help="Load and cache nflverse game film")
 scenarios_app = typer.Typer(help="Chart versioned late-game situation packs")
@@ -218,7 +222,9 @@ def _strategy(
     if name == "expected_points":
         return ExpectedPointsStrategy()
     if not model or not upstream_url or not model_license:
-        raise typer.BadParameter("LLM benchmark exports require --model, --upstream-url, and " "--model-license for reproducible provenance")
+        raise typer.BadParameter(
+            "LLM benchmark exports require --model, --upstream-url, and " "--model-license for reproducible provenance"
+        )
     llm = make_model(
         ModelConfiguration(
             provider=provider,
@@ -226,6 +232,7 @@ def _strategy(
             upstream_url=HttpUrl(upstream_url),
             license=model_license,
             base_url=base_url,
+            reasoning_effort=get_application_settings(provider).reasoning_effort,
         )
     )
     return SingleAgentStrategy(llm) if name == "single_agent" else MultiAgentStrategy(llm)
@@ -237,11 +244,11 @@ def benchmark_run(
     output: Annotated[Path, typer.Option()] = Path("reports/results.jsonl"),
     strategies: Annotated[list[str], typer.Option("--strategy", help="Repeat for multiple strategies.")] = ["expected_points"],
     simulator_path: Annotated[Path | None, typer.Option()] = None,
-    model: Annotated[str | None, typer.Option()] = None,
-    provider: Annotated[str, typer.Option(help="Registered LangChain model provider ID.")] = "ollama",
-    upstream_url: Annotated[str | None, typer.Option()] = None,
-    model_license: Annotated[str | None, typer.Option()] = None,
-    base_url: Annotated[str, typer.Option()] = "http://127.0.0.1:11434",
+    model: Annotated[str | None, typer.Option()] = DEFAULT_MODEL_SETTINGS.model or None,
+    provider: Annotated[str, typer.Option(help="Registered LangChain model provider ID.")] = DEFAULT_MODEL_SETTINGS.provider,
+    upstream_url: Annotated[str | None, typer.Option()] = DEFAULT_MODEL_SETTINGS.upstream_url or None,
+    model_license: Annotated[str | None, typer.Option()] = DEFAULT_MODEL_SETTINGS.model_license or None,
+    base_url: Annotated[str, typer.Option()] = DEFAULT_MODEL_SETTINGS.base_url,
 ) -> None:
     """Run paired strategies over a scenario pack."""
 

@@ -1,8 +1,7 @@
-"""Azure AI Foundry adapter using only the Responses API."""
+"""Azure AI Foundry adapter for the Responses API."""
 
 from __future__ import annotations
 
-import os
 from typing import Any
 from urllib.parse import urlparse
 
@@ -18,7 +17,7 @@ class AzureFoundryProvider:
     provider_id = ModelProvider.AZURE_FOUNDRY.value
     display_name = "Azure AI Foundry"
     capabilities = ProviderCapabilities(
-        generation_parameters=frozenset({"temperature"}),
+        generation_parameters=frozenset({"reasoning_effort"}),
         api_mode="responses",
     )
 
@@ -35,7 +34,9 @@ class AzureFoundryProvider:
         from langchain_openai import ChatOpenAI
 
         self.validate_configuration(configuration)
-        api_key = os.environ.get("AZURE_FOUNDRY_API_KEY")
+        from nfl_coaching_sim.settings import get_application_settings
+
+        api_key = get_application_settings(self.provider_id).foundry_api_key
         if api_key:
             credential: Any = api_key
             authentication = "api_key_environment"
@@ -49,14 +50,19 @@ class AzureFoundryProvider:
             authentication = "default_azure_credential"
 
         generation_parameters = self.capabilities.select_generation_parameters(configuration)
+        model_parameters = dict(generation_parameters)
+        reasoning_effort = model_parameters.pop("reasoning_effort", None)
+        if reasoning_effort is not None:
+            # The Responses API accepts reasoning controls as a nested object.
+            model_parameters["reasoning"] = {"effort": reasoning_effort}
         model = ChatOpenAI(
             model=configuration.model,
             base_url=configuration.base_url,
             api_key=credential,
             use_responses_api=True,
-            **generation_parameters,
+            **model_parameters,
         )
-        if model.use_responses_api is not True:
+        if not model.use_responses_api:
             raise RuntimeError("Azure Foundry must use LangChain's Responses API mode")
         return ProviderModel(
             chat_model=model,
