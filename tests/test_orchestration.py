@@ -1,4 +1,5 @@
 import json
+import logging
 import time
 from threading import Lock
 from typing import TypeVar
@@ -92,8 +93,11 @@ class FakeStructuredModel:
 
 
 def test_full_debate_uses_deterministic_vote_when_synthesis_fails(
+    caplog,
     monkeypatch,
 ) -> None:
+    monkeypatch.setattr(logging.getLogger("nfl_coaching_sim"), "propagate", True)
+    caplog.set_level(logging.INFO, logger="nfl_coaching_sim.agents")
     monkeypatch.delenv("NFL_COACH_MODEL_PROVIDER", raising=False)
     monkeypatch.setenv("AZURE_FOUNDRY_REASONING_EFFORT", "medium")
     defaults = get_application_settings()
@@ -264,3 +268,6 @@ def test_full_debate_uses_deterministic_vote_when_synthesis_fails(
     assert any("actual front" in prompt.lower() and "unavailable" in prompt.lower() for prompt in fake_model.system_prompts)
     assert all("evidence_packet" in prompt for prompt in fake_model.user_prompts)
     assert any("head_coach" in failure for failure in trace.failures)
+    assert "multi_agent_started" in caplog.text
+    assert "head_coach_fallback" in caplog.text
+    assert "multi_agent_completed" in caplog.text

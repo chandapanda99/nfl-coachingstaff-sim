@@ -12,6 +12,7 @@ from nfl_coaching_sim.providers.base import ModelProvider, REASONING_EFFORTS
 
 _ENVIRONMENT_LOCK = Lock()
 _ENVIRONMENT_LOADED = False
+_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 
 
 def _load_environment() -> None:
@@ -46,6 +47,7 @@ class ApplicationSettings:
     upstream_url: str
     model_license: str
     reasoning_effort: str | None
+    log_level: str = "INFO"
     foundry_api_key: str | None = field(default=None, repr=False)
 
 
@@ -96,6 +98,9 @@ def get_application_settings(provider: str | None = None) -> ApplicationSettings
     )
     if reasoning_effort is not None and reasoning_effort not in REASONING_EFFORTS:
         raise ValueError(f"reasoning effort must be one of {sorted(REASONING_EFFORTS)}")
+    log_level = _first_environment_value("NFL_COACH_LOG_LEVEL", default="INFO").upper()
+    if log_level not in _LOG_LEVELS:
+        raise ValueError(f"NFL_COACH_LOG_LEVEL must be one of {sorted(_LOG_LEVELS)}")
 
     return ApplicationSettings(
         provider=selected_provider,
@@ -104,5 +109,6 @@ def get_application_settings(provider: str | None = None) -> ApplicationSettings
         upstream_url=upstream_url,
         model_license=model_license,
         reasoning_effort=reasoning_effort,
+        log_level=log_level,
         foundry_api_key=_first_environment_value("AZURE_FOUNDRY_API_KEY") or None,
     )

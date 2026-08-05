@@ -52,6 +52,12 @@ def load_app_css() -> str:
     return files("nfl_coaching_sim").joinpath("app.css").read_text(encoding="utf-8")
 
 
+def load_app_js() -> str:
+    """Load the packaged Gradio browser behavior."""
+
+    return files("nfl_coaching_sim").joinpath("app.js").read_text(encoding="utf-8")
+
+
 def create_app_theme() -> Any:
     """Create the football-inspired light and dark Gradio theme."""
 
@@ -327,7 +333,7 @@ def _decision_card(trace: DecisionTrace) -> str:
         Action.RUN: "🏃",
         Action.PASS: "🎯",
         Action.PUNT: "🦵",
-        Action.FIELD_GOAL: "🦵🥅",
+        Action.FIELD_GOAL: '<span class="play-call__goalpost"></span>',
         Action.GO_FOR_IT: "📣",
     }[trace.decision.action]
     fallback = '<span class="warning-chip">Fallback Call Used</span>' if trace.fallback_used else ""
@@ -1236,8 +1242,8 @@ def create_app(
                             info="Ignored when the ball is at midfield",
                         )
                     with gr.Row():
-                        custom_offense_timeouts = gr.Number(value=2, label="Offense Timeouts", precision=0, minimum=0, maximum=3)
-                        custom_defense_timeouts = gr.Number(value=2, label="Defense Timeouts", precision=0, minimum=0, maximum=3)
+                        custom_offense_timeouts = gr.Number(value=3, label="Offense Timeouts", precision=0, minimum=0, maximum=3)
+                        custom_defense_timeouts = gr.Number(value=3, label="Defense Timeouts", precision=0, minimum=0, maximum=3)
                     with gr.Accordion("Optional Analytics Overrides", open=False, elem_id="custom-analytics-overrides"):
                         with gr.Row():
                             custom_win_probability = gr.Number(
@@ -1253,7 +1259,7 @@ def create_app(
                                 info="Leave blank to estimate from down, distance, and field position",
                             )
                 with gr.Row(elem_id="custom-situation-actions"):
-                    cancel_custom_situation = gr.Button("Cancel", variant="secondary")
+                    cancel_custom_situation = gr.Button("Cancel", variant="stop")
                     save_custom_situation = gr.Button("Save to My Situations", variant="primary")
 
         with gr.Group(visible=False, elem_id="delete-situation-modal") as delete_situation_modal:

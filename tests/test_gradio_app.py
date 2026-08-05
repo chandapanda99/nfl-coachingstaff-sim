@@ -10,6 +10,7 @@ from nfl_coaching_sim.app import (
     custom_scenario_form_values,
     scenarios_for_library,
     load_app_css,
+    load_app_js,
     run_strategy_events,
     scenario_view,
     scenario_view_with_reset,
@@ -62,6 +63,19 @@ def test_gradio_app_builds_and_critical_callbacks_run_without_model_server(
             DeterministicSimulator(),
         )
     )
+    field_goal_events = list(
+        run_strategy_events(
+            scenarios[3].scenario_id,
+            "expected_points",
+            "ollama",
+            "",
+            "",
+            "",
+            "",
+            payloads,
+            DeterministicSimulator(),
+        )
+    )
     model_defaults = ApplicationSettings(
         provider="azure_foundry",
         model="default-foundry-deployment",
@@ -101,6 +115,7 @@ def test_gradio_app_builds_and_critical_callbacks_run_without_model_server(
     remaining_library = delete_custom_scenario(custom_path, edited_custom.scenario_id)
     theme = create_app_theme()
     stylesheet = load_app_css()
+    browser_script = load_app_js()
     launches = []
     monkeypatch.setattr(cli, "_launch_app", lambda *args, **kwargs: launches.append(True))
     result = CliRunner().invoke(cli.app, [])
@@ -133,6 +148,9 @@ def test_gradio_app_builds_and_critical_callbacks_run_without_model_server(
     assert "Head Coach's Call" in events[-1][2]
     assert "Call Sent to the Huddle" in events[-1][2]
     assert "Win Probability Added" in events[-1][3]
+    assert "Kick the field goal" in field_goal_events[-1][2]
+    assert 'class="play-call__goalpost"' in field_goal_events[-1][2]
+    assert "🦵🥅" not in field_goal_events[-1][2]
     assert app is not None
     assert theme is not None
     assert "noinspection" not in stylesheet
@@ -166,6 +184,17 @@ def test_gradio_app_builds_and_critical_callbacks_run_without_model_server(
     assert "headset-timeline--empty" in str(app.config)
     assert ".headset-message__bubble" in stylesheet
     assert ".headset-pending__dots" in stylesheet
+    assert '#send-play-call' in browser_script
+    assert '#coaches-meeting-transcript' in browser_script
+    assert 'new MutationObserver(scheduleFollow)' in browser_script
+    assert 'feed.scrollTop = feed.scrollHeight' in browser_script
+    assert 'transcript.scrollIntoView' in browser_script
+    assert 'fitHeadsetToViewport' in browser_script
+    assert 'availableHeight' in browser_script
+    assert 'max-height: calc(100dvh - 2rem)' in stylesheet
+    assert 'max-height: min(38rem, calc(100dvh - 7rem))' in stylesheet
+    assert browser_script.startswith('(() => {')
+    assert browser_script.rstrip().endswith('})();')
     assert scenarios[0].display_name in str(app.config)
     assert scenarios[0].scenario_id not in scenarios[0].display_name
     assert result.exit_code == 0

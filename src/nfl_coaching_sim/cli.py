@@ -8,6 +8,7 @@ from typing import Annotated
 import typer
 from pydantic import HttpUrl
 
+from nfl_coaching_sim.observability import configure_logging
 from nfl_coaching_sim.settings import get_application_settings
 
 DEFAULT_MODEL_SETTINGS = get_application_settings()
@@ -103,7 +104,7 @@ def _launch_app(
     port: int = 7860,
     custom_scenarios_path: Path | None = None,
 ) -> None:
-    from nfl_coaching_sim.app import create_app, create_app_theme, load_app_css
+    from nfl_coaching_sim.app import create_app, create_app_theme, load_app_css, load_app_js
     from nfl_coaching_sim.scenario_library import default_custom_scenarios_path
 
     typer.echo("DRAWING UP THE VIRTUAL SIDELINE & LOADING THE CALL SHEET...")
@@ -118,6 +119,7 @@ def _launch_app(
         server_name=host,
         server_port=port,
         css=load_app_css(),
+        js=load_app_js(),
         theme=create_app_theme(),
     )
 
@@ -126,6 +128,7 @@ def _launch_app(
 def main(ctx: typer.Context) -> None:
     """Launch the app when no subcommand is supplied."""
 
+    configure_logging(DEFAULT_MODEL_SETTINGS.log_level)
     if ctx.invoked_subcommand is None:
         _launch_app()
 

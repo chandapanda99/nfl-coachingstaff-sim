@@ -94,6 +94,12 @@ variables take precedence over `.env`. Gradio selections and explicit CLI option
 
 The application does not load `config/models.json`; `.env` is the single source for startup model defaults.
 
+### Sideline diagnostics
+
+The app writes concise orchestration logs to the terminal that launched it. These include the scenario, coaching role, deliberation phase, selected call, structured-output
+retry, evidence-validation failure, and fallback reason; prompts, credentials, and complete model responses are not logged. The default level is `INFO`. Set
+`NFL_COACH_LOG_LEVEL=DEBUG` in `.env` when diagnosing a provider or coaching-staff response, or use `WARNING` for fallback and validation issues only.
+
 Example:
 
 ```shell

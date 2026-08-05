@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -36,9 +37,17 @@ from nfl_coaching_sim.providers import (
 )
 
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
+logger = logging.getLogger(__name__)
 _EVIDENCE_ID_ALIASES = {
     "CLOCK_CONTEXT": "STATE_CLOCK_CONTEXT",
 }
+
+
+def _error_summary(error: Exception, limit: int = 320) -> str:
+    """Keep diagnostics useful without dumping prompts or complete model payloads."""
+
+    summary = " ".join(str(error).split())
+    return summary[:limit] + ("…" if len(summary) > limit else "")
 
 
 @dataclass(frozen=True)
@@ -154,7 +163,34 @@ class LangChainStructuredModel:
         self._model = chat_model
 
     def invoke(self, schema: type[SchemaT], system_prompt: str, user_prompt: str) -> SchemaT:
-        return _invoke_with_repair(self._model, schema, system_prompt, user_prompt)
+        started = time.perf_counter()
+        logger.debug(
+            "model_call_started model_id=%s schema=%s api_mode=%s authentication=%s generation_parameters=%s",
+            self.model_id,
+            schema.__name__,
+            self.capabilities.api_mode,
+            self.authentication,
+            sorted(self.effective_generation_parameters),
+        )
+        try:
+            result = _invoke_with_repair(self._model, schema, system_prompt, user_prompt)
+        except Exception as error:
+            logger.debug(
+                "model_call_failed model_id=%s schema=%s error_type=%s error=%s latency_seconds=%.3f",
+                self.model_id,
+                schema.__name__,
+                type(error).__name__,
+                _error_summary(error),
+                time.perf_counter() - started,
+            )
+            raise
+        logger.debug(
+            "model_call_completed model_id=%s schema=%s latency_seconds=%.3f",
+            self.model_id,
+            schema.__name__,
+            time.perf_counter() - started,
+        )
+        return result
 
 
 def _invoke_with_repair(model: Any, schema: type[SchemaT], system_prompt: str, user_prompt: str) -> SchemaT:
@@ -176,6 +212,13 @@ def _invoke_with_repair(model: Any, schema: type[SchemaT], system_prompt: str, u
             if not _is_repairable_output_error(error):
                 raise
             last_error = error
+            logger.warning(
+                "structured_output_retry schema=%s attempt=%d error_type=%s error=%s",
+                schema.__name__,
+                attempt + 1,
+                type(error).__name__,
+                _error_summary(error),
+            )
             repair = (
                 "\n\nYour previous response was invalid. Return only content that matches the required schema. "
                 f"Repair attempt {attempt + 1}."
@@ -273,6 +316,13 @@ def _validate_recommendation(recommendation: Recommendation, scenario: Scenario,
     cited = {evidence_id for assessment in recommendation.action_assessments for evidence_id in assessment.evidence_ids}
     unknown = cited - brief.evidence_ids
     if unknown:
+        logger.warning(
+            "evidence_validation_failed scenario_id=%s role=%s unknown_ids=%s allowed_ids=%s",
+            scenario.scenario_id,
+            recommendation.role,
+            sorted(unknown),
+            sorted(brief.evidence_ids),
+        )
         raise ValueError(f"recommendation cited unknown evidence IDs: {sorted(unknown)}")
     return recommendation
 
@@ -338,6 +388,7 @@ class SingleAgentStrategy:
 
     def decide(self, scenario: Scenario) -> DecisionTrace:
         started = time.perf_counter()
+        logger.info("single_agent_started scenario_id=%s model_id=%s", scenario.scenario_id, self.model.model_id)
         failures: list[str] = []
         fallback = False
         try:
@@ -354,13 +405,20 @@ class SingleAgentStrategy:
             )
             decision.validate_for(scenario.state)
         except Exception as error:
+            logger.warning(
+                "single_agent_fallback scenario_id=%s model_id=%s error_type=%s error=%s",
+                scenario.scenario_id,
+                self.model.model_id,
+                type(error).__name__,
+                _error_summary(error),
+            )
             failures.append(f"head_coach: {error}")
             fallback = True
             decision = _ep_decision(
                 scenario,
                 "The head coach did not get a clean call through before the play clock, so the analytics card takes over.",
             )
-        return DecisionTrace(
+        trace = DecisionTrace(
             strategy=self.name,
             decision=decision,
             model_id=self.model.model_id,
@@ -369,6 +427,15 @@ class SingleAgentStrategy:
             failures=failures,
             fallback_used=fallback,
         )
+        logger.info(
+            "single_agent_completed scenario_id=%s model_id=%s call=%s fallback=%s latency_seconds=%.3f",
+            scenario.scenario_id,
+            self.model.model_id,
+            trace.decision.action.value,
+            trace.fallback_used,
+            trace.latency_seconds,
+        )
+        return trace
 
 
 class MultiAgentStrategy:
@@ -410,6 +477,12 @@ class MultiAgentStrategy:
 
     def iter_decide(self, scenario: Scenario) -> Iterator[StageEvent]:
         started = time.perf_counter()
+        logger.info(
+            "multi_agent_started scenario_id=%s model_id=%s parallel_calls=%d",
+            scenario.scenario_id,
+            self.model.model_id,
+            self.max_parallel_calls,
+        )
         failures: list[str] = []
         role_order = tuple(ROLE_PROFILES)
         calls = len(role_order)
@@ -422,8 +495,22 @@ class MultiAgentStrategy:
                 try:
                     recommendation = future.result()
                 except Exception as error:
+                    logger.warning(
+                        "coach_fallback scenario_id=%s phase=initial role=%s error_type=%s error=%s",
+                        scenario.scenario_id,
+                        role,
+                        type(error).__name__,
+                        _error_summary(error),
+                    )
                     initial_errors[role] = error
                     recommendation = _fallback_recommendation(role, scenario, error)
+                else:
+                    logger.info(
+                        "coach_response_completed scenario_id=%s phase=initial role=%s call=%s",
+                        scenario.scenario_id,
+                        role,
+                        recommendation.decision.action.value,
+                    )
                 initial_by_role[role] = recommendation
                 yield StageEvent(
                     stage=f"recommendation:{role}",
@@ -448,11 +535,25 @@ class MultiAgentStrategy:
                 try:
                     recommendation = future.result()
                 except Exception as error:
+                    logger.warning(
+                        "coach_fallback scenario_id=%s phase=revision role=%s error_type=%s error=%s",
+                        scenario.scenario_id,
+                        role,
+                        type(error).__name__,
+                        _error_summary(error),
+                    )
                     revision_errors[role] = error
                     fallback = _fallback_recommendation(role, scenario, error)
                     recommendation = RevisedRecommendation(
                         **fallback.model_dump(),
                         rebuttal="No adjustments came through on the headset.",
+                    )
+                else:
+                    logger.info(
+                        "coach_response_completed scenario_id=%s phase=revision role=%s call=%s",
+                        scenario.scenario_id,
+                        role,
+                        recommendation.decision.action.value,
                     )
                 revised_by_role[role] = recommendation
                 yield StageEvent(
@@ -489,6 +590,13 @@ class MultiAgentStrategy:
             )
             decision.validate_for(scenario.state)
         except Exception as error:
+            logger.warning(
+                "head_coach_fallback scenario_id=%s model_id=%s error_type=%s error=%s",
+                scenario.scenario_id,
+                self.model.model_id,
+                type(error).__name__,
+                _error_summary(error),
+            )
             failures.append(f"head_coach: {error}")
             decision = action_vote(revised, scenario)
             fallback_used = True
@@ -509,6 +617,16 @@ class MultiAgentStrategy:
             model_calls=calls,
             failures=failures,
             fallback_used=fallback_used,
+        )
+        logger.info(
+            "multi_agent_completed scenario_id=%s model_id=%s call=%s fallback=%s failures=%d model_calls=%d latency_seconds=%.3f",
+            scenario.scenario_id,
+            self.model.model_id,
+            trace.decision.action.value,
+            trace.fallback_used,
+            len(trace.failures),
+            trace.model_calls,
+            trace.latency_seconds,
         )
         yield StageEvent(
             stage="decision",
