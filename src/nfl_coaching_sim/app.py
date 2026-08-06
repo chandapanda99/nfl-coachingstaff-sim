@@ -231,41 +231,88 @@ def _pre_snap_card(scenario: Scenario) -> str:
         game_margin = "Tie game"
     legal_calls = "".join(f'<span class="call-chip">{_safe(action.football_label)}</span>' for action in state.legal_actions)
     win_probability = max(0.0, min(1.0, state.win_probability))
+    # The offense always drives left-to-right on the tablet. Keeping that
+    # orientation stable makes the line to gain immediately understandable.
+    line_of_scrimmage = max(0.0, min(100.0, 100.0 - state.yardline_100))
+    line_to_gain = max(0.0, min(100.0, line_of_scrimmage + state.yards_to_go))
+    field_description = (
+        f"{state.possession_team} ball at {state.field_position}, driving toward the "
+        f"{state.defensive_team} end zone. The blue marker is the line of scrimmage; "
+        "the gold marker is the line to gain."
+    )
+    yard_markers = "".join(
+        f'<span class="field-yard-marker" style="left: {yard}%"><b>{min(yard, 100 - yard)}</b></span>'
+        for yard in range(10, 100, 10)
+    )
+    offense_timeouts = "".join(
+        '<i class="timeout-dot{}"></i>'.format(" timeout-dot--used" if timeout >= state.possession_timeouts else "")
+        for timeout in range(3)
+    )
+    defense_timeouts = "".join(
+        '<i class="timeout-dot{}"></i>'.format(" timeout-dot--used" if timeout >= state.defensive_timeouts else "")
+        for timeout in range(3)
+    )
+    field_goal_note = ""
+    if state.down == 4 and Action.FIELD_GOAL in state.legal_actions:
+        field_goal_note = f'<span class="field-note">Approx. {state.yardline_100 + 17:g}-yard FG</span>'
     return f"""
 <section class="coach-card situation-card" aria-label="Pre-snap situation data">
   <header class="coach-card__header">
     <div>
       <span class="coach-card__eyebrow">Pre-Snap Situation Data</span>
-      <h3>Situation at a Glance</h3>
+      <h3>Sideline Tablet</h3>
     </div>
     <span class="game-tag">{state.season} · Week {state.week}</span>
   </header>
-  <div class="score-strip">
-    <div class="team-score">
-      <small>Offense · Ball</small>
-      <div class="team-score__line">
-        <span>{_safe(state.possession_team)}</span>
-        <strong>{state.possession_score}</strong>
+  <div class="broadcast-scoreboard">
+    <div class="scoreboard-team scoreboard-team--possession">
+      <span class="possession-flag">Ball</span>
+      <div class="scoreboard-team__score">
+        <span>{_safe(state.possession_team)}</span><strong>{state.possession_score}</strong>
+      </div>
+      <div class="timeout-row" aria-label="{state.possession_team} has {state.possession_timeouts} timeouts">
+        <small>Timeouts</small>{offense_timeouts}
       </div>
     </div>
-    <span class="score-strip__divider">vs</span>
-    <div class="team-score">
-      <small>Defense</small>
-      <div class="team-score__line">
-        <span>{_safe(state.defensive_team)}</span>
-        <strong>{state.defensive_score}</strong>
+    <div class="scoreboard-clock">
+      <span>{_safe(state.clock_display)}</span>
+      <strong>{_safe(state.down_and_distance)}</strong>
+      <small>{_safe(game_margin)}</small>
+    </div>
+    <div class="scoreboard-team scoreboard-team--defense">
+      <span class="possession-flag possession-flag--placeholder">Defense</span>
+      <div class="scoreboard-team__score">
+        <span>{_safe(state.defensive_team)}</span><strong>{state.defensive_score}</strong>
+      </div>
+      <div class="timeout-row" aria-label="{state.defensive_team} has {state.defensive_timeouts} timeouts">
+        <small>Timeouts</small>{defense_timeouts}
       </div>
     </div>
   </div>
-  <div class="situation-grid">
-    <div class="situation-fact"><span>Game Clock</span><strong>{_safe(state.clock_display)}</strong></div>
-    <div class="situation-fact"><span>Down &amp; Distance</span><strong>{_safe(state.down_and_distance)}</strong></div>
-    <div class="situation-fact"><span>Field Position</span><strong>{_safe(state.field_position)}</strong></div>
-    <div class="situation-fact"><span>Score Situation</span><strong>{_safe(game_margin)}</strong></div>
-    <div class="situation-fact"><span>Timeouts</span><strong>
-      {state.possession_timeouts} Offense · {state.defensive_timeouts} Defense
-    </strong></div>
-    <div class="situation-fact"><span>Current Expected Points</span><strong>{state.expected_points:+.3f} points</strong></div>
+  <div class="football-field-wrap">
+    <div class="football-field" role="img" aria-label="{_safe(field_description)}">
+      <div class="field-end-zone field-end-zone--offense"><span>{_safe(state.possession_team)}</span></div>
+      <div class="field-playing-surface">
+        {yard_markers}
+        <span class="field-line field-line--scrimmage" style="left: {line_of_scrimmage:.2f}%"><b>LOS</b></span>
+        <span class="field-line field-line--gain" style="left: {line_to_gain:.2f}%"><b>TO GAIN</b></span>
+        <span class="field-football" style="left: {line_of_scrimmage:.2f}%" aria-hidden="true"></span>
+      </div>
+      <div class="field-end-zone field-end-zone--defense"><span>{_safe(state.defensive_team)}</span></div>
+    </div>
+    <div class="field-legend">
+      <strong>Ball on {_safe(state.field_position)}</strong>
+      <span class="drive-direction">{_safe(state.possession_team)} driving <b>→</b></span>
+      <span><i class="legend-line legend-line--scrimmage"></i>Line of scrimmage</span>
+      <span><i class="legend-line legend-line--gain"></i>Line to gain</span>
+      {field_goal_note}
+    </div>
+  </div>
+  <div class="decision-strip">
+    <div><span>Down &amp; Distance</span><strong>{_safe(state.down_and_distance)}</strong></div>
+    <div><span>Field Position</span><strong>{_safe(state.field_position)}</strong></div>
+    <div><span>Game Situation</span><strong>{_safe(game_margin)}</strong></div>
+    <div><span>Expected Points</span><strong>{state.expected_points:+.3f}</strong></div>
   </div>
   <div class="probability-block">
     <div><span>Offense Win Probability</span><strong>{win_probability:.1%}</strong></div>

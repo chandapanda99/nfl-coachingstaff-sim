@@ -122,7 +122,11 @@ def test_gradio_app_builds_and_critical_callbacks_run_without_model_server(
 
     assert "CALL IS IN:" in events[-1][0]
     assert "Analytics Booth" in events[-1][1]
-    assert "Situation at a Glance" in state
+    assert "Sideline Tablet" in state
+    assert "football-field" in state
+    assert "Line of scrimmage" in state
+    assert "Line to gain" in state
+    assert "driving" in state
     assert escape(scenarios[0].state.down_and_distance) in state
     assert "Expected Value by Call" in baseline
     assert "New situation is on the call sheet" in reset_view[2]
@@ -134,6 +138,7 @@ def test_gradio_app_builds_and_critical_callbacks_run_without_model_server(
     assert "GB 38" in custom_state
     assert "Q4 1:12" in custom_state
     assert "Keep the offense on the field" in custom_state
+    assert "Approx. 55-yard FG" in custom_state
     assert "Expected Value by Call" in custom_baseline
     assert reloaded_custom == [custom]
     assert edited_library == [edited_custom]
