@@ -1,0 +1,36 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "NFL Virtual Coaching Staff",
+  "version": "0.1.0",
+  "identifier": "com.aayushchanda.nfl-coachingstaff-sim",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:5173",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "NFL Virtual Coaching Staff",
+        "width": 1440,
+        "height": 940,
+        "minWidth": 920,
+        "minHeight": 680,
+        "resizable": true,
+        "center": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; connect-src 'self' http://127.0.0.1:8765; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "externalBin": ["binaries/nfl-coach-backend"],
+    "copyright": "Copyright © 2026 Aayush Chanda",
+    "category": "Education",
+    "shortDescription": "Multi-agent NFL coaching decision simulator"
+  }
+}

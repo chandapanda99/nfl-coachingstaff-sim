@@ -8,8 +8,7 @@ requires-python = ">=3.12,<3.14"
 authors = [{ name = "Aayush Chanda" }]
 dependencies = [
     "azure-identity>=1.19,<2",
-    "black>=26.3.0",
-    "gradio>=6.0,<7",
+    "fastapi>=0.115,<1",
     "joblib>=1.4,<2",
     "langchain-core>=1.0,<2",
     "langchain-ollama>=1.0,<2",
@@ -21,10 +20,12 @@ dependencies = [
     "python-dotenv>=1.0,<2",
     "scikit-learn>=1.6,<2",
     "typer>=0.15,<1",
+    "uvicorn>=0.34,<1",
 ]
 
 [project.optional-dependencies]
-test = ["pytest>=8.3,<9"]
+test = ["httpx>=0.28,<1", "pytest>=8.3,<9"]
+package = ["pyinstaller>=6.13,<7"]
 
 [project.scripts]
 nfl-coach = "nfl_coaching_sim.cli:app"
@@ -45,5 +46,5 @@ filterwarnings = ["ignore:Setting the shape on a NumPy array has been deprecated
 target-version = "py312"
 line-length = 125
 
-[tool.black]
-line-length = 140
+[tool.uv]
+prerelease = "allow"

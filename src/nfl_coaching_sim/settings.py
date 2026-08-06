@@ -39,7 +39,7 @@ def _first_environment_value(*names: str, default: str = "") -> str:
 
 @dataclass(frozen=True)
 class ApplicationSettings:
-    """Resolved model defaults shared by Gradio, CLI, and provider adapters."""
+    """Resolved model defaults shared by the API, CLI, and provider adapters."""
 
     provider: str
     model: str

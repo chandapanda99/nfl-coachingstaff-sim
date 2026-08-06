@@ -16,3 +16,11 @@ reports/
 # Versioned scenario packs under data/scenarios are release artifacts and are retained.
 /config/models.json
 /.env
+
+# Web and desktop build products.
+frontend/node_modules/
+frontend/dist/
+frontend/src-tauri/target/
+frontend/src-tauri/binaries/
+build/
+dist/

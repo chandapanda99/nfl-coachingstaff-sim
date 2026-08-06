@@ -13,16 +13,13 @@ from nfl_coaching_sim.agents import (
     make_model,
     register_model_provider,
 )
-from nfl_coaching_sim.app import format_coaching_conversation, format_live_coaching_conversation, run_strategy_events
 from nfl_coaching_sim.data import demo_scenarios
 from nfl_coaching_sim.football import build_situation_brief
 from nfl_coaching_sim.models import (
     Action,
     Decision,
-    Recommendation,
     RevisedRecommendation,
 )
-from nfl_coaching_sim.simulator import DeterministicSimulator
 from nfl_coaching_sim.settings import get_application_settings
 
 SchemaT = TypeVar("SchemaT", bound=BaseModel)
@@ -167,77 +164,18 @@ def test_full_debate_uses_deterministic_vote_when_synthesis_fails(
     trace = next(event.trace for event in stage_events if event.trace is not None)
     opening_events = [event for event in stage_events if event.recommendation is not None]
     revision_events = [event for event in stage_events if event.revision is not None]
-    streamed_opening: dict[str, Recommendation] = {}
-    opening_snapshots: list[str] = []
-    for event in opening_events:
-        assert event.role is not None
-        streamed_opening[event.role] = event.recommendation
-        opening_snapshots.append(format_live_coaching_conversation(scenario, streamed_opening, {}, phase="opening"))
-    streamed_revisions = {event.role: event.revision for event in revision_events if event.role and event.revision}
-    revision_snapshot = format_live_coaching_conversation(
-        scenario,
-        streamed_opening,
-        streamed_revisions,
-        phase="revision",
-    )
-    streaming_model = FakeStructuredModel()
-    monkeypatch.setattr("nfl_coaching_sim.app.make_model", lambda configuration: streaming_model)
-    ui_updates = list(
-        run_strategy_events(
-            scenario.scenario_id,
-            "multi_agent",
-            "ollama",
-            "fake-model",
-            "",
-            "Apache-2.0",
-            "http://127.0.0.1:11434",
-            [scenario.model_dump(mode="json")],
-            DeterministicSimulator(),
-        )
-    )
-    conversation = format_coaching_conversation(trace, scenario)
-    sanitized_trace = trace.model_copy(
-        update={"failures": ["critical_reviewer initial: recommendation cited unknown evidence IDs: ['RANDOM_TAG']"]}
-    )
-    sanitized_conversation = format_coaching_conversation(sanitized_trace, scenario)
-
     assert trace.model_calls == 11
     assert len(opening_events) == 5
     assert len(revision_events) == 5
     assert len(stage_events) == 13
     assert all(event.recommendation is not None and event.role == event.recommendation.role for event in opening_events)
     assert all(event.revision is not None and event.role == event.revision.role for event in revision_events)
-    assert "<strong>4 coaches</strong> still checking" in opening_snapshots[0]
-    assert "still checking the front" not in opening_snapshots[-1]
-    rendered_title_positions = [
-        opening_snapshots[-1].index(f"headset-message--{event.role.replace('_', '-')}") for event in opening_events if event.role
-    ]
-    assert rendered_title_positions == sorted(rendered_title_positions)
-    assert "Staff Challenge Round" in revision_snapshot
-    assert "still working through the staff challenge" not in revision_snapshot
-    assert len(ui_updates) == 16
-    assert "Completed responses will appear here in arrival order" in ui_updates[0][1]
-    assert "<strong>5 coaches</strong> still checking" in ui_updates[1][1]
-    assert any("<strong>4 coaches</strong> still checking" in update[1] for update in ui_updates)
-    assert any("Staff Challenge Round" in update[1] for update in ui_updates)
-    assert any("still working through the staff challenge" in update[1] for update in ui_updates)
-    assert "Head Coach Breaks the Huddle" in ui_updates[-1][1]
-    assert "headset-message--head-coach" in ui_updates[-1][1]
-    assert "CALL IS IN:" in ui_updates[-1][0]
+    assert {event.stage for event in stage_events} >= {"recommendations", "debate", "decision"}
     assert fake_model.max_active_calls > 1
     assert trace.fallback_used is True
     assert trace.decision.action == Action.GO_FOR_IT
     assert trace.decision.go_for_it_play == Action.PASS
     assert trace.transcript is not None
-    assert "Opening Headset Check" in conversation
-    assert "Offensive Coordinator" in conversation
-    assert "Head Coach Breaks the Huddle" in conversation
-    assert "Call-sheet notes" in conversation
-    assert "Evidence:" not in conversation
-    assert "CLOCK_PRIORITY" not in conversation
-    assert "EP_BASELINE_" not in conversation
-    assert "RANDOM_TAG" not in sanitized_conversation
-    assert "could not be verified" in sanitized_conversation
     assert len(trace.transcript.initial) == 5
     assert len(trace.transcript.revised) == 5
     assert not any("unknown evidence" in failure for failure in trace.failures)

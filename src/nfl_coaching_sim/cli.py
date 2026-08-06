@@ -27,10 +27,7 @@ app.add_typer(ui_app, name="app")
 
 DEFAULT_CACHE_DIR = Path("data/cache")
 DEFAULT_SCENARIO_DIR = Path("data/scenarios")
-DEFAULT_QUICKSTART_PATH = DEFAULT_SCENARIO_DIR / "benchmark-v1.jsonl"
 DEFAULT_SIMULATOR_PATH = Path("artifacts/simulator-v1.joblib")
-
-
 def _sync_data(output_dir: Path) -> None:
     from nfl_coaching_sim.data import EVALUATION_SEASONS, TRAINING_SEASONS, load_pbp
 
@@ -79,49 +76,18 @@ def _train_simulator(training: Path, output: Path) -> None:
     simulator.save(output)
 
 
-def _load_startup_assets(scenarios_path: Path | None, simulator_path: Path | None):
-    from nfl_coaching_sim.data import demo_scenarios, read_jsonl
-    from nfl_coaching_sim.simulator import DeterministicSimulator
-
-    if scenarios_path is not None:
-        scenarios = read_jsonl(scenarios_path)
-    elif DEFAULT_QUICKSTART_PATH.exists():
-        scenarios = read_jsonl(DEFAULT_QUICKSTART_PATH)
-    else:
-        scenarios = demo_scenarios()
-
-    resolved_simulator = simulator_path
-    if resolved_simulator is None and DEFAULT_SIMULATOR_PATH.exists():
-        resolved_simulator = DEFAULT_SIMULATOR_PATH
-    evaluator = DeterministicSimulator.deferred(resolved_simulator) if resolved_simulator is not None else DeterministicSimulator()
-    return scenarios, evaluator
-
-
 def _launch_app(
     scenarios_path: Path | None = None,
     simulator_path: Path | None = None,
     host: str = "127.0.0.1",
-    port: int = 7860,
+    port: int = 8765,
     custom_scenarios_path: Path | None = None,
 ) -> None:
-    from nfl_coaching_sim.app import create_app, create_app_theme, load_app_css, load_app_js
-    from nfl_coaching_sim.scenario_library import default_custom_scenarios_path
+    from nfl_coaching_sim.server import run_server
 
     typer.echo("DRAWING UP THE VIRTUAL SIDELINE & LOADING THE CALL SHEET...")
-    scenarios, evaluator = _load_startup_assets(scenarios_path, simulator_path)
-    demo = create_app(
-        scenarios,
-        evaluator,
-        custom_scenarios_path=custom_scenarios_path or default_custom_scenarios_path(),
-    )
-    # typer.echo(f"Virtual Sideline opening at: http://{host}:{port}")
-    demo.launch(
-        server_name=host,
-        server_port=port,
-        css=load_app_css(),
-        js=load_app_js(),
-        theme=create_app_theme(),
-    )
+    typer.echo(f"Virtual Sideline API readying at http://{host}:{port}")
+    run_server(scenarios_path, simulator_path, host, port, custom_scenarios_path)
 
 
 @app.callback()
@@ -289,10 +255,10 @@ def app_serve(
     scenarios_path: Annotated[Path | None, typer.Option("--scenarios")] = None,
     simulator_path: Annotated[Path | None, typer.Option()] = None,
     host: Annotated[str, typer.Option()] = "127.0.0.1",
-    port: Annotated[int, typer.Option()] = 7860,
+    port: Annotated[int, typer.Option()] = 8765,
     custom_scenarios_path: Annotated[Path | None, typer.Option("--custom-scenarios")] = None,
 ) -> None:
-    """Launch the interactive Gradio application."""
+    """Launch the local API and built web application."""
 
     _launch_app(scenarios_path, simulator_path, host, port, custom_scenarios_path)
 
@@ -302,10 +268,10 @@ def serve(
     scenarios_path: Annotated[Path | None, typer.Option("--scenarios")] = None,
     simulator_path: Annotated[Path | None, typer.Option()] = None,
     host: Annotated[str, typer.Option()] = "127.0.0.1",
-    port: Annotated[int, typer.Option()] = 7860,
+    port: Annotated[int, typer.Option()] = 8765,
     custom_scenarios_path: Annotated[Path | None, typer.Option("--custom-scenarios")] = None,
 ) -> None:
-    """Launch Gradio with optional custom assets and network settings."""
+    """Launch the local API and built web application."""
 
     _launch_app(scenarios_path, simulator_path, host, port, custom_scenarios_path)
 

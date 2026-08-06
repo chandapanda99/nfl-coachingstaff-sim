@@ -1,194 +1,116 @@
-# Multi-Agent NFL Coaching Simulator
+# NFL Virtual Coaching Staff
 
-An open-source research application for asking whether a deliberating NFL coaching staff outperforms a single language-model coach or a simple expected-points policy. Five
-role agents independently recommend a call, review anonymized arguments, revise their positions, and send the debate to a head-coach synthesizer. A deterministic, held-out
-action-value model scores the result.
+A local-first NFL decision simulator that puts five specialist coaches on the headset, lets them challenge and revise a call, and has a head coach send the final decision to a deterministic WPA/EPA simulator.
 
-The project is local-first. Its default installation includes Gradio, LangChain, Ollama, Azure AI Foundry authentication, scikit-learn, Polars, and nflverse data. The
-application does not select or download a model for you.
+The project is Apache-2.0 and uses an open-source application stack. Derived nflverse scenario packs retain CC-BY-4.0 attribution. It distributes no model weights or raw nflverse datasets.
 
-## What is included
+## Architecture
 
-- A Gradio scenario explorer with a completed-response live headset transcript: each validated coach message appears as soon as that coach finishes.
-- A built-in call sheet plus a persistent **My Situations** library for named, user-created pre-snap situations.
-- A deterministic situation brief covering score, clock, field-goal distance, field zone, timeout leverage, and endgame first-down value.
-- Evidence-linked action scorecards requiring every coach to compare every legal call, name the closest alternative, and define a switch condition.
-- A Typer CLI for nflverse sync, scenario construction, evaluator training, paired benchmarks, and HTML reports.
-- A 40-case synthetic offline pack for trying the UI and harness without downloading NFL data.
-- A reproducible builder for the CC-BY-4.0 40- and 250-scenario nflverse release packs.
-- Fixed-seed WPA/EPA evaluation, an intentionally simpler bucketed EPA baseline, and paired bootstrap confidence intervals.
+- **Svelte + TypeScript** renders the football field, situation builder, analytics booth, live group-chat transcript, and decision grade.
+- **Tauri 2** packages that interface as a native Windows, macOS, or Linux application using the operating system's webview.
+- **FastAPI** exposes typed scenario and deliberation endpoints and streams one completed coach response at a time as NDJSON.
+- **LangChain** provides a provider-neutral model boundary. Azure AI Foundry is the default provider; Ollama and registered custom adapters use the same coaching workflow.
+- **Typer** retains the data, training, benchmarking, reporting, and server commands.
 
-## Quick start
+The presentation layer contains no coaching logic. The API and CLI share `CoachingApplication`, `ScenarioRepository`, provider adapters, and the deterministic simulator.
 
-Use Python 3.12 or 3.13:
+## Quick start for development
 
-```shell
-python -m venv .venv
-.venv\Scripts\python -m pip install -e .
-.venv\Scripts\nfl-coach
+Requirements: Python 3.12 or 3.13, [uv](https://docs.astral.sh/uv/), and Node.js 20 or newer.
+
+```powershell
+Copy-Item .env.example .env
+uv sync --extra test
+uv run nfl-coach serve
 ```
 
-On macOS or Linux, use `.venv/bin/` instead of `.venv\Scripts\`.
+In a second terminal:
 
-With uv, synchronize once and skip repeat environment checks on normal launches:
-
-```shell
-uv sync --python 3.13
-uv run --no-sync nfl-coach
+```powershell
+Set-Location frontend
+npm install
+npm run dev
 ```
 
-Run a normal `uv sync` again whenever `pyproject.toml` or `uv.lock` changes.
+Open `http://127.0.0.1:5173`. The API listens on `http://127.0.0.1:8765`; interactive API documentation is available at `/docs`.
 
-The bare `nfl-coach` command launches Gradio with the checked-in nflverse quick-start scenarios. It automatically uses `artifacts/simulator-v1.joblib` when present and
-otherwise uses the deterministic offline evaluator.
+The analytics-only strategy works without a model connection. LLM strategies display a clear headset error when the configured provider is unavailable.
 
-Use `nfl-coach serve --help` when you need a custom host, port, scenario pack, or simulator path. `python -m nfl_coaching_sim` is an equivalent startup command.
+## Model configuration
 
-Custom situations saved in the app are loaded on later startups. By default they live in the current user's application-data directory as `custom-scenarios.jsonl`. Set
-`NFL_COACH_CUSTOM_SCENARIOS` or pass `--custom-scenarios PATH` to choose a different location.
+`.env` is the single source of startup defaults for both the API-backed interface and CLI. The checked-in `config/models.example.json` documents additional provider registrations; a local `config/models.json` can extend them without becoming a second source for defaults.
 
-The expected-points strategy works immediately. For an Ollama strategy, start an Ollama server and enter all of the following in the UI:
-
-- The installed Ollama model tag.
-- Optionally, the model's upstream project or weight URL.
-- Its approved SPDX license.
-- The Ollama base URL.
-
-The included software does not claim that an arbitrary Ollama tag is open source. Users remain responsible for accurately declaring the selected weights' license.
-
-### Azure AI Foundry
-
-Azure AI Foundry is the default provider for both Gradio and the benchmark CLI. A single typed settings loader reads `.env` and supplies the same startup defaults to both
-entry points. Configure:
+Azure AI Foundry is selected by default:
 
 ```dotenv
-FOUNDRY_MODEL=YOUR_FOUNDRY_DEPLOYMENT
+NFL_COACH_MODEL_PROVIDER=azure_foundry
+FOUNDRY_MODEL=your-deployment-name
 FOUNDRY_ENDPOINT=https://YOUR-RESOURCE.services.ai.azure.com/openai/v1/
-FOUNDRY_UPSTREAM_URL=https://example.org/upstream-open-model
+FOUNDRY_UPSTREAM_URL=https://project-homepage-for-provenance.example
 FOUNDRY_MODEL_LICENSE=Apache-2.0
+AZURE_FOUNDRY_API_KEY=
 AZURE_FOUNDRY_REASONING_EFFORT=medium
 ```
 
-Interactive use requires:
+`FOUNDRY_UPSTREAM_URL` is optional provenance metadata; it is never used to query the model. Foundry calls use LangChain's Responses API path (`use_responses_api=True`), omit temperature, and send only parameters supported by that provider. Authentication uses the API key when supplied and otherwise uses `DefaultAzureCredential`.
 
-- The Foundry deployment name as the model.
-- The deployment endpoint ending in `/openai/v1/`.
-- Its approved open-model SPDX license.
+For Ollama:
 
-The model source URL is optional in Gradio because it is not used for inference. CLI LLM benchmarks require it so exported research results retain model provenance.
-
-Authentication uses `DefaultAzureCredential`, so local Azure CLI credentials, managed identity, workload identity, and environment-based service principals work without
-putting secrets in the app. If key authentication is unavoidable, set
-`AZURE_FOUNDRY_API_KEY` in the process environment. Keys are never accepted through Gradio or CLI options and are not written to benchmark artifacts. Foundry model calls use
-LangChain's Responses API mode (`use_responses_api=True`). Each provider adapter allowlists its supported generation parameters: Foundry receives only an optional reasoning
-effort, while Ollama receives `temperature` and `seed`. Temperature is never sent to Foundry deployments.
-
-For a reasoning-capable Foundry deployment, set `AZURE_FOUNDRY_REASONING_EFFORT` to a level supported by that deployment (for example, `low`, `medium`, or `high`). The
-application sends it as `reasoning={"effort": ...}` through the Responses API. Leave the variable unset to use the model's default reasoning behavior.
-`NFL_COACH_REASONING_EFFORT` is also available as a provider-neutral fallback for future adapters; provider-specific variables take precedence, and unsupported providers do
-not receive the setting.
-
-The loader also accepts provider-neutral overrides: `NFL_COACH_MODEL_PROVIDER`, `NFL_COACH_MODEL`, `NFL_COACH_MODEL_ENDPOINT`, `NFL_COACH_MODEL_UPSTREAM_URL`,
-`NFL_COACH_MODEL_LICENSE`, and `NFL_COACH_REASONING_EFFORT`. Provider-neutral model values take precedence over provider-specific model values, and process environment
-variables take precedence over `.env`. Gradio selections and explicit CLI options remain the final per-run overrides.
-
-The application does not load `config/models.json`; `.env` is the single source for startup model defaults.
-
-### Sideline diagnostics
-
-The app writes concise orchestration logs to the terminal that launched it. These include the scenario, coaching role, deliberation phase, selected call, structured-output
-retry, evidence-validation failure, and fallback reason; prompts, credentials, and complete model responses are not logged. The default level is `INFO`. Set
-`NFL_COACH_LOG_LEVEL=DEBUG` in `.env` when diagnosing a provider or coaching-staff response, or use `WARNING` for fallback and validation issues only.
-
-Example:
-
-```shell
-nfl-coach benchmark run ^
-  --strategy single_agent ^
-  --provider azure_foundry ^
-  --model YOUR_FOUNDRY_DEPLOYMENT ^
-  --base-url https://YOUR-RESOURCE.services.ai.azure.com/openai/v1/
+```dotenv
+NFL_COACH_MODEL_PROVIDER=ollama
+OLLAMA_MODEL=your-local-model-tag
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_UPSTREAM_URL=https://model-project.example
+OLLAMA_MODEL_LICENSE=Apache-2.0
 ```
 
-Azure AI Foundry is a proprietary hosted provider. The application continues to enforce an approved open license for the selected model, and benchmark provenance distinguishes
-the serving provider from the model license.
+Keys stay in the backend process and are never returned by `/api/settings` or written to benchmark artifacts.
 
-### LangChain provider boundary
+## Desktop development and packaging
 
-All coaching strategies depend on one provider-neutral structured-model interface. Provider adapters under `nfl_coaching_sim.providers` own endpoint validation,
-authentication, supported parameters, API mode, and lazy LangChain model construction. Structured-output repair, prompts, orchestration, and fallback behavior remain shared.
-Registered providers automatically appear in Gradio, and the CLI accepts any registered provider ID.
+Install the stable Rust toolchain in addition to the quick-start requirements. Run the FastAPI backend in one terminal, then:
 
-Add a LangChain-compatible provider by implementing the `ProviderAdapter` protocol and registering one adapter during startup:
-
-```python
-from nfl_coaching_sim.providers import register_provider
-
-# register_provider(MyProviderAdapter())
+```powershell
+Set-Location frontend
+npm run tauri dev
 ```
 
-The adapter declares `ProviderCapabilities`, validates its own configuration, and returns a `ProviderModel`. A function-based `register_model_provider(...)` compatibility
-helper remains available for simple integrations. No coaching strategy, prompt, benchmark, or UI callback needs provider-specific logic.
+Create a release installer on the target operating system with:
 
-## Rebuild the research artifacts
-
-The released scenarios work without setup. To download nflverse play-by-play, regenerate both scenario packs, and train the simulator in one step:
-
-```shell
-nfl-coach setup
+```powershell
+uv sync --extra package
+uv run --extra package python packaging/build_sidecar.py
+Set-Location frontend
+npm install
+npm run tauri build
 ```
 
-Then run a benchmark and report:
+The sidecar script builds the Python/FastAPI backend with PyInstaller and gives it the target-triple filename Tauri expects. Tauri then produces the platform's native package. Build separately on Windows, macOS, and Linux; a package from one operating system is not portable to another.
 
-```shell
-nfl-coach benchmark run --scenarios data/scenarios/quickstart-v1.jsonl
-nfl-coach benchmark report
+## Research CLI
+
+```powershell
+uv run nfl-coach data sync
+uv run nfl-coach scenarios build
+uv run nfl-coach simulator train
+uv run nfl-coach benchmark run
+uv run nfl-coach benchmark report
+uv run nfl-coach app serve
 ```
 
-The granular `data sync`, `scenarios build`, and `simulator train` commands remain available when only one artifact needs rebuilding.
+The checked-in 25-situation pack makes the app immediately usable. The 250-situation benchmark and trained simulator are reproducible from nflverse play-by-play. Training uses 2016–2023; 2024–2025 are reserved for evaluation.
 
-To include model strategies, repeat `--strategy` and provide model provenance:
+## Verification
 
-```shell
-nfl-coach benchmark run ^
-  --strategy expected_points ^
-  --strategy single_agent ^
-  --strategy multi_agent ^
-  --model YOUR_OLLAMA_TAG ^
-  --upstream-url https://example.org/upstream-model ^
-  --model-license Apache-2.0
+The durable Python suite intentionally contains only five critical-path tests: data isolation, simulator determinism/reload/fallback, full orchestration and provider behavior, paired benchmark reproducibility, and the application/API contract.
+
+```powershell
+uv run --extra test pytest
+Set-Location frontend
+npm run check
+npm run build
 ```
 
-Use shell-appropriate line continuation on non-Windows platforms.
+## Licensing and limitations
 
-## Evaluation design
-
-Training uses the 2016–2023 seasons. Released evaluation scenarios use 2024–2025 and are limited to regulation plays in quarters three and four, offense win probability from
-10% through 90%, and score differential within 16 points. Nullified plays, kneels, spikes, and incomplete states are excluded.
-
-The primary score is expected win-probability added. EPA, oracle regret, best-action rate, failures, fallbacks, latency, and model-call counts are secondary outputs. Neither
-agents nor the EP policy see the richer evaluator's counterfactual scores.
-
-Prompt version 3 builds an outcome-free situation brief from each released scenario. Specialist coaches receive the same evidence packet as the single-agent head coach, but
-use role-specific checklists and headset voices. Multi-agent recommendations must assess every legal action and may cite only evidence included in that packet. Evidence IDs
-remain private structured metadata for validation and benchmarking; the visible transcript references the underlying football facts in natural coaching language.
-
-This is an observational benchmark. The action-value regressors learn from choices NFL coaches actually made, so their counterfactual scores are not causal estimates and
-retain selection bias. Results should be described as performance against this released simulator—not proof that an unobserved call would have produced the modeled outcome.
-
-## Data and licenses
-
-Code is Apache-2.0. nflverse-derived scenario packs are CC-BY-4.0 and include a source manifest and hashes. See [data/README.md](data/README.md) for attribution and the public
-artifact schema. Raw nflverse data and model weights are never committed.
-
-## Development
-
-The retained test suite has five critical-path tests:
-
-```shell
-python -m pip install -e ".[test]"
-pytest
-```
-
-It covers data isolation, deterministic scoring, full deliberation/fallback, paired benchmarking, and Gradio construction/callbacks. Temporary scripts, snapshots, generated
-reports, and low-value implementation-detail tests are not kept in the repository.
+Application code is Apache-2.0. Generated scenario packs derived from nflverse are CC-BY-4.0; see `NOTICE` and the scenario source manifests. The v1 benchmark is observational and does not eliminate historical coaching-selection bias. Overtime, penalties, kneels, spikes, injury/personnel context, and play-design granularity remain outside its scope.
