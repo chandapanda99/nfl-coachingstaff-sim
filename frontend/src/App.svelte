@@ -43,6 +43,17 @@
     critical_reviewer: "QC",
     head_coach: "HC"
   };
+  const teamColors: Record<string, readonly [string, string]> = {
+    ARI: ["#97233f", "#ffb612"], ATL: ["#a71930", "#000000"], BAL: ["#241773", "#9e7c0c"], BUF: ["#00338d", "#c60c30"],
+    CAR: ["#0085ca", "#101820"], CHI: ["#0b162a", "#c83803"], CIN: ["#fb4f14", "#000000"], CLE: ["#311d00", "#ff3c00"],
+    DAL: ["#003594", "#869397"], DEN: ["#fb4f14", "#002244"], DET: ["#0076b6", "#b0b7bc"], GB: ["#203731", "#ffb612"],
+    HOU: ["#03202f", "#a71930"], IND: ["#002c5f", "#a2aaad"], JAX: ["#006778", "#d7a22a"], KC: ["#e31837", "#ffb81c"],
+    LA: ["#003594", "#ffa300"], LAR: ["#003594", "#ffa300"], LAC: ["#0080c6", "#ffc20e"], LV: ["#000000", "#a5acaf"],
+    MIA: ["#008e97", "#fc4c02"], MIN: ["#4f2683", "#ffc62f"], NE: ["#002244", "#c60c30"], NO: ["#101820", "#d3bc8d"],
+    NYG: ["#0b2265", "#a71930"], NYJ: ["#125740", "#ffffff"], PHI: ["#004c54", "#a5acaf"], PIT: ["#101820", "#ffb612"],
+    SEA: ["#002244", "#69be28"], SF: ["#aa0000", "#b3995d"], TB: ["#d50a0a", "#ff7900"], TEN: ["#0c2340", "#4b92db"],
+    WAS: ["#5a1414", "#ffb612"]
+  };
 
   let scenarios: ScenarioEnvelope[] = [];
   let library: "prebuilt" | "custom" = "prebuilt";
@@ -60,6 +71,8 @@
   let editingId: string | undefined;
   let lastSelectedId = "";
   let form: CustomScenarioInput = emptyForm();
+  let scenarioFormError = "";
+  let savingScenario = false;
 
   $: filteredScenarios = scenarios.filter((item) => item.library === library);
   $: selectedEnvelope = scenarios.find((item) => item.scenario.scenario_id === selectedId);
@@ -89,6 +102,11 @@
       win_probability_percent: null,
       expected_points: null
     };
+  }
+
+  function teamZoneStyle(team: string): string {
+    const [primary, accent] = teamColors[team] ?? ["#1f5f35", "#f8fafc"];
+    return `--zone-primary:${primary};--zone-accent:${accent}`;
   }
 
   function resetAnalysis(message = "Waiting for Coach to put in the call…") {
@@ -216,6 +234,7 @@
   function openNew() {
     editingId = undefined;
     form = emptyForm();
+    scenarioFormError = "";
     modalOpen = true;
   }
 
@@ -244,20 +263,35 @@
       win_probability_percent: state.win_probability * 100,
       expected_points: state.expected_points
     };
+    scenarioFormError = "";
     modalOpen = true;
   }
 
   async function submitScenario() {
+    if (savingScenario) return;
     error = "";
+    scenarioFormError = "";
+    savingScenario = true;
+    const editing = Boolean(editingId);
     try {
       const saved = await saveScenario(form, editingId);
       scenarios = await getScenarios();
       library = "custom";
       selectedId = saved.scenario.scenario_id;
+      lastSelectedId = saved.scenario.scenario_id;
+      resetAnalysis(`${editing ? "Updated" : "Saved"} ${saved.scenario.name ?? "custom situation"} to My Situations.`);
       modalOpen = false;
     } catch (caught) {
-      error = caught instanceof Error ? caught.message : String(caught);
+      scenarioFormError = caught instanceof Error ? caught.message : String(caught);
+    } finally {
+      savingScenario = false;
     }
+  }
+
+  function closeScenarioDialog() {
+    if (savingScenario) return;
+    scenarioFormError = "";
+    modalOpen = false;
   }
 
   async function removeSelected() {
@@ -335,14 +369,24 @@
           </div>
           <div class="field-wrap">
             <div class="football-field" role="img" aria-label={`${state.possession_team} ball on ${fieldPosition(selected)}, driving toward the ${state.defensive_team} end zone`}>
-              <div class="end-zone offense-zone"><span>{state.possession_team}</span></div>
+              <div class="end-zone offense-zone" style={teamZoneStyle(state.possession_team)}><i class="goalpost" aria-hidden="true"></i><b class="zone-watermark" aria-hidden="true">{state.possession_team}</b><span>{state.possession_team}</span></div>
               <div class="playing-field">
-                {#each [10,20,30,40,50,60,70,80,90] as yard}<span class="yard" style={`left:${yard}%`}>{Math.min(yard, 100-yard)}</span>{/each}
+                {#each [5,10,15,20,25,30,35,40,45,50,55,60,65,70,75,80,85,90,95] as yard}
+                  <i class:major={yard % 10 === 0} class="yard-line" style={`left:${yard}%`}></i>
+                {/each}
+                {#each [10,20,30,40,50,60,70,80,90] as yard}
+                  <span class="yard-number top" style={`left:${yard}%`}>{Math.min(yard, 100-yard)}</span>
+                  <span class="yard-number bottom" style={`left:${yard}%`}>{Math.min(yard, 100-yard)}</span>
+                {/each}
+                <i class="hash-row sideline top" aria-hidden="true"></i>
+                <i class="hash-row inside upper" aria-hidden="true"></i>
+                <i class="hash-row inside lower" aria-hidden="true"></i>
+                <i class="hash-row sideline bottom" aria-hidden="true"></i>
                 <span class="field-line los" style={`left:${los}%`}><b>LOS</b></span>
                 <span class="field-line gain" style={`left:${gain}%`}><b>TO GAIN</b></span>
                 <span class="football" style={`left:${los}%`}></span>
               </div>
-              <div class="end-zone defense-zone"><span>{state.defensive_team}</span></div>
+              <div class="end-zone defense-zone" style={teamZoneStyle(state.defensive_team)}><b class="zone-watermark" aria-hidden="true">{state.defensive_team}</b><span>{state.defensive_team}</span><i class="goalpost" aria-hidden="true"></i></div>
             </div>
             <div class="field-legend">
               <strong>Ball on {fieldPosition(selected)}</strong>
@@ -438,10 +482,10 @@
 </main>
 
 {#if modalOpen}
-  <div class="modal-backdrop" role="presentation" on:click={(event) => event.currentTarget === event.target && (modalOpen = false)}>
+  <div class="modal-backdrop" role="presentation" on:click={(event) => event.currentTarget === event.target && closeScenarioDialog()}>
     <div class="scenario-dialog" role="dialog" aria-modal="true" aria-label="Custom game situation">
-      <header><div><span class="eyebrow">My Situations</span><h2>{editingId ? "Edit Game Situation" : "Build a New Game Situation"}</h2></div><button class="icon-button" on:click={() => modalOpen = false}>×</button></header>
-      <form on:submit|preventDefault={submitScenario}>
+      <header><div><span class="eyebrow">My Situations</span><h2>{editingId ? "Edit Game Situation" : "Build a New Game Situation"}</h2></div><button class="icon-button" disabled={savingScenario} on:click={closeScenarioDialog} aria-label="Close situation editor">×</button></header>
+      <form novalidate on:submit|preventDefault={submitScenario}>
         <label class="full">Situation name<input required bind:value={form.name} /></label>
         <label>Season<input type="number" min="2000" max="2100" bind:value={form.season} /></label><label>Week<input type="number" min="1" max="22" bind:value={form.week} /></label>
         <label>Offense<input required maxlength="4" bind:value={form.possession_team} /></label><label>Defense<input required maxlength="4" bind:value={form.defensive_team} /></label>
@@ -451,7 +495,8 @@
         <label>Field side<select bind:value={form.field_side}><option value="offense">Offense’s side</option><option value="midfield">Midfield</option><option value="defense">Defense’s side</option></select></label><label>Yard line<input type="number" min="1" max="49" disabled={form.field_side === "midfield"} bind:value={form.yard_line} /></label>
         <label>Offense timeouts<input type="number" min="0" max="3" bind:value={form.possession_timeouts} /></label><label>Defense timeouts<input type="number" min="0" max="3" bind:value={form.defensive_timeouts} /></label>
         <details class="full overrides"><summary>Optional analytics overrides</summary><div><label>Win probability %<input type="number" min="0" max="100" step="0.1" bind:value={form.win_probability_percent} /></label><label>Expected points<input type="number" step="0.001" bind:value={form.expected_points} /></label></div></details>
-        <footer class="full"><button type="button" class="secondary" on:click={() => modalOpen = false}>Cancel</button><button type="submit" class="primary">{editingId ? "Update Situation" : "Save to My Situations"}</button></footer>
+        {#if scenarioFormError}<div class="scenario-form-error full" role="alert"><b>Unable to save this situation</b><span>{scenarioFormError}</span></div>{/if}
+        <footer class="full"><button type="button" class="secondary" disabled={savingScenario} on:click={closeScenarioDialog}>Cancel</button><button type="submit" class="primary" disabled={savingScenario}>{savingScenario ? "Saving to My Situations…" : editingId ? "Update Situation" : "Save to My Situations"}</button></footer>
       </form>
     </div>
   </div>

@@ -368,65 +368,176 @@ input, select {
 
 .football-field {
     display: grid;
-    grid-template-columns: 8% 1fr 8%;
+    grid-template-columns: 8.333% 1fr 8.333%;
     overflow: hidden;
-    min-height: clamp(9.3rem, 10vw, 11rem);
-    border: 3px solid #f8fafc;
-    border-radius: .35rem;
+    width: 100%;
+    aspect-ratio: 120 / 53.3;
+    border: .42rem solid #f8fafc;
+    border-radius: .2rem;
+    background: #315f12;
+    box-shadow: 0 0 0 1px rgba(15, 23, 42, .8), inset 0 0 1.5rem rgba(0, 0, 0, .2);
 }
 
 .end-zone {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
     overflow: hidden;
-    background: repeating-linear-gradient(135deg, #7c2d12 0, #7c2d12 7px, #9a3412 7px, #9a3412 14px);
+    isolation: isolate;
+    background-color: var(--zone-primary, #315f12);
+    background-image:
+        repeating-linear-gradient(135deg, rgba(255,255,255,.12) 0 2px, transparent 2px 11px),
+        linear-gradient(90deg, color-mix(in srgb, var(--zone-primary, #315f12) 72%, #000), var(--zone-primary, #315f12) 52%, color-mix(in srgb, var(--zone-primary, #315f12) 78%, #fff));
+    box-shadow: inset 0 0 1.25rem rgba(0,0,0,.38);
 }
+
+.end-zone::before {
+    position: absolute;
+    z-index: 0;
+    top: 0;
+    bottom: 0;
+    width: .25rem;
+    background: var(--zone-accent, #f8fafc);
+    box-shadow: 0 0 .45rem color-mix(in srgb, var(--zone-accent, #f8fafc) 75%, transparent);
+    content: "";
+}
+
+.end-zone.offense-zone {
+    border-right: 3px solid #f8fafc
+}
+
+.end-zone.offense-zone::before { right: .25rem }
 
 .end-zone.defense-zone {
-    background: repeating-linear-gradient(45deg, #1e3a5f 0, #1e3a5f 7px, #274b77 7px, #274b77 14px);
+    border-left: 3px solid #f8fafc
 }
 
+.end-zone.defense-zone::before { left: .25rem }
+
 .end-zone span {
-    font-size: .68rem;
+    position: relative;
+    z-index: 1;
+    color: rgba(255,255,255,.92);
+    font-size: clamp(.65rem, 1vw, .86rem);
     font-weight: 900;
-    letter-spacing: .1em;
+    letter-spacing: .13em;
+    text-shadow: 0 1px 3px rgba(0,0,0,.75);
     transform: rotate(-90deg);
 }
+
+.zone-watermark {
+    position: absolute;
+    z-index: 0;
+    top: 50%;
+    color: rgba(255,255,255,.18);
+    font-size: clamp(1.55rem, 3.5vw, 3.2rem);
+    font-weight: 950;
+    letter-spacing: -.08em;
+    line-height: 1;
+    text-shadow: 0 2px 4px rgba(0,0,0,.28);
+    transform: translate(-50%, -50%) rotate(-90deg);
+}
+
+.offense-zone .zone-watermark { left: 50% }
+.defense-zone .zone-watermark { left: 50% }
+
+.goalpost {
+    position: absolute;
+    z-index: 2;
+    top: 50%;
+    width: clamp(.65rem, 1.2vw, 1rem);
+    height: 30%;
+    border: 3px solid #ffd54a;
+    border-radius: .12rem;
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,.75));
+    transform: translateY(-50%);
+}
+
+.offense-zone .goalpost {
+    left: .18rem;
+    border-right: 0
+}
+
+.defense-zone .goalpost {
+    right: .18rem;
+    border-left: 0
+}
+
+.goalpost::after {
+    position: absolute;
+    top: 50%;
+    width: .35rem;
+    height: .35rem;
+    border-radius: 50%;
+    border: 1px solid #8a5a00;
+    background: #ffd54a;
+    content: "";
+    transform: translateY(-50%);
+}
+
+.offense-zone .goalpost::after { right: -.2rem }
+.defense-zone .goalpost::after { left: -.2rem }
 
 .playing-field {
     position: relative;
     overflow: hidden;
-    background-color: #176b43;
-    background-image: repeating-linear-gradient(90deg, transparent 0, transparent calc(10% - 1px), rgba(255, 255, 255, .68) calc(10% - 1px), rgba(255, 255, 255, .68) 10%), repeating-linear-gradient(0deg, rgba(255, 255, 255, .05) 0, rgba(255, 255, 255, .05) 50%, transparent 50%, transparent 100%);
-    background-size: 100% 100%, 100% 2.5rem;
+    background-color: #3f7b19;
+    background-image: repeating-linear-gradient(90deg, rgba(255,255,255,.015) 0, rgba(255,255,255,.015) 1%, rgba(0,0,0,.025) 1%, rgba(0,0,0,.025) 2%);
+    box-shadow: inset 0 0 2rem rgba(0,0,0,.12);
 }
 
-.playing-field::before, .playing-field::after {
+.yard-line {
     position: absolute;
-    right: 0;
-    left: 0;
-    height: 1px;
-    background: repeating-linear-gradient(90deg, transparent 0, transparent 2.5%, rgba(255, 255, 255, .9) 2.5%, rgba(255, 255, 255, .9) 3.2%);
-    content: "";
-}
-
-.playing-field::before {
-    top: 34%
-}
-
-.playing-field::after {
-    bottom: 34%
-}
-
-.yard {
-    position: absolute;
-    top: 56%;
-    color: rgba(255, 255, 255, .8);
-    font-size: .62rem;
-    font-weight: 800;
+    z-index: 0;
+    top: 0;
+    bottom: 0;
+    width: 1px;
+    background: rgba(255,255,255,.48);
     transform: translateX(-50%);
 }
+
+.yard-line.major {
+    width: 2px;
+    background: rgba(255,255,255,.82)
+}
+
+.hash-row {
+    position: absolute;
+    z-index: 1;
+    right: 0;
+    left: 0;
+    height: .48rem;
+    opacity: .85;
+    background: repeating-linear-gradient(90deg, rgba(255,255,255,.95) 0 1px, transparent 1px 1%);
+}
+
+.hash-row.sideline.top { top: 0 }
+.hash-row.sideline.bottom { bottom: 0 }
+.hash-row.inside.upper { top: 35% }
+.hash-row.inside.lower { bottom: 35% }
+
+.yard-number {
+    position: absolute;
+    z-index: 1;
+    color: rgba(255,255,255,.94);
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: clamp(.62rem, 1.25vw, 1.05rem);
+    font-weight: 700;
+    line-height: 1;
+    text-shadow: 0 1px 2px rgba(0,0,0,.45);
+}
+
+.yard-number::before {
+    display: inline-block;
+    margin-right: .12em;
+    content: "◂";
+    font-size: .65em;
+    vertical-align: .1em;
+}
+
+.yard-number.top { top: 13%; transform: translateX(-50%) rotate(180deg) }
+.yard-number.bottom { bottom: 13%; transform: translateX(-50%) }
 
 .field-line {
     position: absolute;
@@ -986,6 +1097,22 @@ input, select {
     padding-top: .3rem
 }
 
+.scenario-form-error {
+    display: grid;
+    gap: .25rem;
+    padding: .7rem .8rem;
+    border: 1px solid #fb7185;
+    border-radius: .4rem;
+    background: #450a0a;
+    color: #fecdd3;
+    font-size: .82rem;
+    line-height: 1.35;
+}
+
+.scenario-form-error b {
+    color: #fff1f2;
+}
+
 .primary {
     border: 1px solid #c2410c;
     border-radius: .4rem;
@@ -1052,10 +1179,11 @@ input, select {
 
     .football-field {
         grid-template-columns:10% 1fr 10%;
-        min-height: 7.2rem
+        aspect-ratio: 2 / 1;
+        border-width: .3rem
     }
 
-    .yard {
+    .yard-number {
         display: none
     }
 
