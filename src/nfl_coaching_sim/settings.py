@@ -4,15 +4,30 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import os
+from pathlib import Path
+import sys
 from threading import Lock
 
 from dotenv import find_dotenv, load_dotenv
 
 from nfl_coaching_sim.providers.base import ModelProvider, REASONING_EFFORTS
+from nfl_coaching_sim.runtime import user_config_path
 
 _ENVIRONMENT_LOCK = Lock()
 _ENVIRONMENT_LOADED = False
 _LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+
+
+def application_env_path() -> Path | None:
+    """Resolve the one .env file used by source and packaged application runs."""
+
+    if configured := os.environ.get("NFL_COACH_ENV_FILE"):
+        return Path(configured).expanduser()
+    if getattr(sys, "frozen", False):
+        candidate = user_config_path()
+        return candidate if candidate.is_file() else None
+    discovered = find_dotenv()
+    return Path(discovered) if discovered else None
 
 
 def _load_environment() -> None:
@@ -23,7 +38,7 @@ def _load_environment() -> None:
         return
     with _ENVIRONMENT_LOCK:
         if not _ENVIRONMENT_LOADED:
-            dotenv_path = find_dotenv()
+            dotenv_path = application_env_path()
             if dotenv_path:
                 load_dotenv(dotenv_path, override=False)
             _ENVIRONMENT_LOADED = True

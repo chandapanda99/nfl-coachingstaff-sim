@@ -8,6 +8,7 @@ from pathlib import Path
 from threading import Lock
 
 from nfl_coaching_sim.models import Scenario
+from nfl_coaching_sim.runtime import user_scenarios_path
 
 CUSTOM_SCENARIO_SOURCE = "user-created custom scenario"
 _library_lock = Lock()
@@ -19,9 +20,7 @@ def default_custom_scenarios_path() -> Path:
     override = os.environ.get("NFL_COACH_CUSTOM_SCENARIOS")
     if override:
         return Path(override).expanduser()
-    if local_app_data := os.environ.get("LOCALAPPDATA"):
-        return Path(local_app_data) / "nfl-coachingstaff-sim" / "custom-scenarios.jsonl"
-    return Path.home() / ".local" / "share" / "nfl-coachingstaff-sim" / "custom-scenarios.jsonl"
+    return user_scenarios_path()
 
 
 def is_custom_scenario(scenario: Scenario) -> bool:

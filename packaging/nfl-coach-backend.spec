@@ -4,8 +4,10 @@ project_root = Path(SPEC).parent.parent
 
 datas = [
     (str(project_root / "data" / "scenarios"), "data/scenarios"),
-    (str(project_root / "artifacts" / "simulator-v1.joblib"), "artifacts"),
 ]
+simulator_artifact = project_root / "artifacts" / "simulator-v1.joblib"
+if simulator_artifact.exists():
+    datas.append((str(simulator_artifact), "artifacts"))
 hiddenimports = [
     "nfl_coaching_sim.providers.azure_foundry",
     "nfl_coaching_sim.providers.ollama",

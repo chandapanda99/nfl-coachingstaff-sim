@@ -75,7 +75,30 @@ Set-Location frontend
 npm run tauri dev
 ```
 
-Create a release installer on the target operating system with:
+Create a Windows release installer from the repository root with:
+
+```powershell
+.\packaging\build_windows.ps1
+```
+
+The script verifies the Python and Svelte critical paths, builds the windowless Python sidecar, loads the installed Visual Studio C++ developer environment, and produces both MSI and NSIS installers. It requires the Visual Studio **Desktop development with C++** workload and a Windows SDK. Repeat builds can skip dependency installation with `-SkipInstall`; use `-SkipChecks` only after the same source revision has already passed its checks.
+
+The generated Windows installers are written to:
+
+```text
+frontend\src-tauri\target\release\bundle\msi\
+frontend\src-tauri\target\release\bundle\nsis\
+```
+
+Installed builds read model defaults and credentials from the current user's configuration file rather than the installation directory:
+
+```text
+%LOCALAPPDATA%\nfl-coachingstaff-sim\config\.env
+```
+
+Copy the repository's `.env.example` there and fill in the desired Foundry or Ollama settings. Saved situations live under the same application directory in `data`, sidecar diagnostics live in `logs`, and desktop WebView state lives in `EBWebView`. On the first packaged startup, files from the former `com.aayushchanda.nfl-coachingstaff-sim` and `NFL Virtual Coaching Staff` directories are moved into this canonical directory without overwriting conflicts. The configuration and saved situations remain in the user's profile during application upgrades; neither is embedded in the executable or installer.
+
+The equivalent manual, cross-platform build sequence is:
 
 ```powershell
 uv sync --extra package

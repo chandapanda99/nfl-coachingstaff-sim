@@ -36,11 +36,7 @@ button:disabled {
 }
 
 .app-header {
-    display: grid;
-    grid-template-columns: 1fr minmax(28rem, .9fr);
-    align-items: start;
-    gap: 1.25rem;
-    margin-bottom: 1rem;
+    min-width: 0;
 }
 
 .app-header h1 {
@@ -51,12 +47,12 @@ button:disabled {
 
 .app-header p {
     margin: 0;
-    color: #cbd5e1;
+    color: #b4c8eb;
 }
 
 .eyebrow {
     display: block;
-    color: #ff922b !important;
+    color: #ff5a00 !important;
     font-size: .87rem;
     font-weight: 700;
     line-height: 1.35;
@@ -107,9 +103,9 @@ input, select {
 
 .required-marker {
     margin-left: .1rem;
-    color: #d70303;
-    font-size: 1.05em;
-    font-weight: 800;
+    color: #ec0000;
+    font-size: 1.2em;
+    font-weight: 750;
 }
 
 .key-state {
@@ -129,7 +125,7 @@ input, select {
 .error-banner {
     margin-bottom: 1rem;
     padding: .85rem 1rem;
-    border: 1px solid #f97316;
+    border: 1px solid #fa1919;
     border-radius: .5rem;
     background: #431407;
     color: #fed7aa;
@@ -137,7 +133,7 @@ input, select {
 
 .game-plan-grid {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1.38fr) minmax(31rem, 1fr);
     gap: 1.25rem;
     align-items: start;
 }
@@ -164,7 +160,7 @@ input, select {
     display: inline-block;
     padding: .42rem .58rem;
     border-radius: .35rem;
-    background: #f0520a;
+    background: #ff5a00;
     font-size: .93rem;
     font-weight: 700;
     line-height: 1.25;
@@ -194,7 +190,7 @@ input, select {
 
 .segment-control button.active {
     border-color: #f97316;
-    background: #f0520a;
+    background: #ff5a00;
 }
 
 .management-row {
@@ -374,7 +370,7 @@ input, select {
     display: grid;
     grid-template-columns: 8% 1fr 8%;
     overflow: hidden;
-    min-height: 9.3rem;
+    min-height: clamp(9.3rem, 10vw, 11rem);
     border: 3px solid #f8fafc;
     border-radius: .35rem;
 }
@@ -669,7 +665,7 @@ input, select {
     width: 100%;
     border: 2px solid #9a3412;
     border-radius: .6rem;
-    background: #f0520a;
+    background: #ff5a00;
     color: white;
     padding: 1rem;
     font-family: Aptos, "Segoe UI", sans-serif;
@@ -993,21 +989,19 @@ input, select {
 .primary {
     border: 1px solid #c2410c;
     border-radius: .4rem;
-    background: #f0520a;
+    background: #ff5a00;
     color: white;
     padding: .7rem 1rem;
     font-weight: 800
 }
 
-@media (max-width: 960px) {
-    .app-header, .game-plan-grid {
+@media (max-width: 1120px) {
+    .game-plan-grid {
         grid-template-columns:1fr
     }
+}
 
-    .settings-panel {
-        grid-row: 2
-    }
-
+@media (max-width: 960px) {
     .results-grid {
         grid-template-columns:1fr
     }

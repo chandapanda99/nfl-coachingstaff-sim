@@ -7,11 +7,34 @@ from typer.testing import CliRunner
 from nfl_coaching_sim.api import create_api
 from nfl_coaching_sim.cli import app
 from nfl_coaching_sim.data import demo_scenarios
+from nfl_coaching_sim.runtime import migrate_legacy_user_data, user_data_root
 from nfl_coaching_sim.settings import ApplicationSettings
 from nfl_coaching_sim.simulator import DeterministicSimulator
 
 
-def test_local_api_covers_scenarios_persistence_settings_and_streaming(tmp_path) -> None:
+def test_local_api_covers_scenarios_persistence_settings_and_streaming(monkeypatch, tmp_path) -> None:
+    monkeypatch.setenv("LOCALAPPDATA", str(tmp_path / "local-app-data"))
+    legacy_data = tmp_path / "local-app-data" / "com.aayushchanda.nfl-coachingstaff-sim"
+    legacy_logs = tmp_path / "local-app-data" / "NFL Virtual Coaching Staff"
+    (legacy_data / "config").mkdir(parents=True)
+    (legacy_data / "data").mkdir()
+    (legacy_data / "logs").mkdir()
+    (legacy_data / "EBWebView").mkdir()
+    legacy_logs.mkdir(parents=True)
+    (legacy_data / "config" / ".env").write_text("NFL_COACH_LOG_LEVEL=INFO\n", encoding="utf-8")
+    (legacy_data / "data" / "custom-scenarios.jsonl").write_text("", encoding="utf-8")
+    (legacy_data / "logs" / "sidecar.log").write_text("packaged launch\n", encoding="utf-8")
+    (legacy_logs / "sidecar.log").write_text("previous launch\n", encoding="utf-8")
+    migrate_legacy_user_data()
+    canonical_data = user_data_root()
+    assert canonical_data.name == "nfl-coachingstaff-sim"
+    assert (canonical_data / "config" / ".env").is_file()
+    assert (canonical_data / "data" / "custom-scenarios.jsonl").is_file()
+    assert (canonical_data / "logs" / "sidecar.log").is_file()
+    assert (canonical_data / "EBWebView").is_dir()
+    assert not legacy_data.exists()
+    assert not legacy_logs.exists()
+
     cli_help = CliRunner().invoke(app, ["--help"])
     assert cli_help.exit_code == 0
     assert "serve" in cli_help.stdout

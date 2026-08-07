@@ -7,6 +7,7 @@ import os
 import sys
 from pathlib import Path
 
+from nfl_coaching_sim.runtime import migrate_legacy_user_data, user_log_path
 from nfl_coaching_sim.server import run_server
 
 
@@ -14,13 +15,7 @@ def _sidecar_log_path() -> Path:
     configured = os.getenv("NFL_COACH_LOG_FILE")
     if configured:
         return Path(configured).expanduser()
-    if sys.platform == "win32":
-        root = Path(os.getenv("LOCALAPPDATA", Path.home()))
-    elif sys.platform == "darwin":
-        root = Path.home() / "Library" / "Logs"
-    else:
-        root = Path(os.getenv("XDG_STATE_HOME", Path.home() / ".local" / "state"))
-    return root / "NFL Virtual Coaching Staff" / "sidecar.log"
+    return user_log_path()
 
 
 def _configure_windowless_streams() -> None:
@@ -36,6 +31,7 @@ def _configure_windowless_streams() -> None:
 
 
 def main() -> None:
+    migrate_legacy_user_data()
     _configure_windowless_streams()
     parser = argparse.ArgumentParser()
     parser.add_argument("command", choices=["serve"])

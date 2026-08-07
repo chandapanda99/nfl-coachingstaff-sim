@@ -281,34 +281,16 @@
 <svelte:head><title>NFL Virtual Coaching Staff</title></svelte:head>
 
 <main class="app-shell">
-  <header class="app-header">
-    <div>
-      <p class="eyebrow">NFL Decision Lab</p>
-      <h1>NFL Virtual Coaching Staff</h1>
-      <p>Put the situation on the call sheet, hear every coordinator, and see what the head coach sends in.</p>
-    </div>
-    <details class="settings-panel">
-      <summary>Sideline Connection &amp; Model Settings</summary>
-      {#if settings}
-        <div class="settings-grid">
-          <label><span>Provider <span class="required-marker" aria-hidden="true">*</span></span><input required bind:value={settings.provider} /></label>
-          <label><span>Model deployment <span class="required-marker" aria-hidden="true">*</span></span><input required bind:value={settings.model} /></label>
-          <label><span>Endpoint <span class="required-marker" aria-hidden="true">*</span></span><input required bind:value={settings.base_url} /></label>
-          <label>Upstream model URL<input bind:value={settings.upstream_url} /></label>
-          <label>Model license<input bind:value={settings.model_license} /></label>
-          <label>Reasoning effort<input bind:value={settings.reasoning_effort} /></label>
-        </div>
-        <p class:configured={settings.api_key_configured} class="key-state">
-          {settings.api_key_configured ? "Foundry credential detected in the environment" : "No Foundry credential detected"}
-        </p>
-      {/if}
-    </details>
-  </header>
-
   {#if error}<div class="error-banner" role="alert">⚠ {error}</div>{/if}
 
   <section class="game-plan-grid">
     <div class="left-rail">
+      <header class="app-header">
+        <p class="eyebrow">NFL Decision Lab</p>
+        <h1>NFL Virtual Coaching Staff</h1>
+        <p>Put the situation on the call sheet, hear every coordinator, and see what the head coach sends in.</p>
+      </header>
+
       <section class="picker-card">
         <div class="section-heading">
           <span>Game Situation</span>
@@ -381,6 +363,23 @@
     </div>
 
     <aside class="right-rail">
+      <details class="settings-panel">
+        <summary>Sideline Connection &amp; Model Settings</summary>
+        {#if settings}
+          <div class="settings-grid">
+            <label><span>Provider <span class="required-marker" aria-hidden="true">*</span></span><input required bind:value={settings.provider} /></label>
+            <label><span>Model deployment <span class="required-marker" aria-hidden="true">*</span></span><input required bind:value={settings.model} /></label>
+            <label><span>Endpoint <span class="required-marker" aria-hidden="true">*</span></span><input required bind:value={settings.base_url} /></label>
+            <label>Upstream model URL<input bind:value={settings.upstream_url} /></label>
+            <label>Model license<input bind:value={settings.model_license} /></label>
+            <label>Reasoning effort<input bind:value={settings.reasoning_effort} /></label>
+          </div>
+          <p class:configured={settings.api_key_configured} class="key-state">
+            {settings.api_key_configured ? "Foundry credential detected in the environment" : "No Foundry credential detected"}
+          </p>
+        {/if}
+      </details>
+
       <section class="mode-card">
         <span>Who’s Making the Calls?</span>
         <div class="segment-control modes">
